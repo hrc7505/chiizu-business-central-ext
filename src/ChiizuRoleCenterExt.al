@@ -9,9 +9,9 @@ pageextension 50102 "ChiizuRoleCenterExt" extends "Business Manager Role Center"
                 Caption = 'Chiizu';
                 action(OpenChiizuPayments)
                 {
-                    Caption = 'Chiizu Payments';
+                    Caption = 'Chiizu | Purchase Invoices';
                     ApplicationArea = All;
-                    RunObject = page "Chiizu Payments";
+                    RunObject = page "Chiizu Purchase Invoices";
                 }
             }
         }

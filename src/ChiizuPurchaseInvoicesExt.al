@@ -1,4 +1,4 @@
-tableextension 50100 "Chiizu Vendor Ledger Ext" extends "Vendor Ledger Entry"
+tableextension 50100 "Chiizu Purchase Invoices Ext" extends "Purch. Inv. Header"
 {
     fields
     {

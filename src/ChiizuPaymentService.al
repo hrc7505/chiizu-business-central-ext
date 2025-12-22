@@ -1,65 +1,75 @@
 codeunit 50104 "Chiizu Payment Service"
 {
-    procedure PayVendorInvoicesBulk(var VendLedgEntry: Record "Vendor Ledger Entry")
+    procedure PayPurchaseInvoicesBulk(var PurchInvHeader: Record "Purch. Inv. Header")
     var
         Setup: Record "Chiizu Setup";
         Payload: JsonObject;
         Invoices: JsonArray;
+        InvoiceNos: List of [Code[20]];
     begin
         GetOrCreateSetup(Setup);
 
-        if Setup."API Base URL" = '' then begin
-            Page.Run(Page::"Chiizu Setup");
-            Error('Please configure Chiizu API Base URL.');
-        end;
+        if Setup."API Base URL" = '' then
+            Error('Chiizu API Base URL is missing.');
 
-        if Setup."API Key" = '' then begin
-            Page.Run(Page::"Chiizu Setup");
-            Error('Please configure Chiizu API Key.');
-        end;
+        if Setup."API Key" = '' then
+            Error('Chiizu API Key is missing.');
 
-        Invoices := BuildInvoiceArray(VendLedgEntry);
+        // Build payload + collect invoice numbers
+        Invoices := BuildPurchaseInvoiceArray(PurchInvHeader, InvoiceNos);
+
+        if Invoices.Count() = 0 then
+            Error('No valid invoices found for payment.');
 
         Clear(Payload);
         Payload.Add('batchId', CreateBatchId());
         Payload.Add('invoices', Invoices);
 
-        // ✅ ONE HTTP call
+        // Single bulk API call
         CallBulkPaymentAPI(Setup, Payload);
 
-        // ✅ Mark invoices as paid AFTER success
-        MarkInvoicesAsPaid(VendLedgEntry);
+        // Mark ALL invoices as paid
+        MarkInvoicesPaid(InvoiceNos);
     end;
 
     // --------------------------------------------------
     // Build JSON array from selected invoices
     // --------------------------------------------------
-    local procedure BuildInvoiceArray(var VendLedgEntry: Record "Vendor Ledger Entry"): JsonArray
+    local procedure BuildPurchaseInvoiceArray(
+        var PurchInvHeader: Record "Purch. Inv. Header";
+        var InvoiceNos: List of [Code[20]]
+    ): JsonArray
     var
         Obj: JsonObject;
         Arr: JsonArray;
+        Status: Record "Chiizu Invoice Status";
     begin
-        if VendLedgEntry.FindSet() then
+        if PurchInvHeader.FindSet() then
             repeat
-                if VendLedgEntry."Remaining Amount" < 0 then // Todo: After testing please make this check to <=
+                if PurchInvHeader."Remaining Amount" < 0 then
                     Error(
                         'Invoice %1 has no remaining amount.',
-                        VendLedgEntry."Document No."
+                        PurchInvHeader."No."
                     );
 
-                if VendLedgEntry."Chiizu Paid" then
-                    Error(
-                        'Invoice %1 is already paid via Chiizu.',
-                        VendLedgEntry."Document No."
-                    );
+                // Check status table instead of posted invoice
+                if Status.Get(PurchInvHeader."No.") then
+                    if Status."Paid via Chiizu" then
+                        Error(
+                            'Invoice %1 is already paid via Chiizu.',
+                            PurchInvHeader."No."
+                        );
 
                 Clear(Obj);
-                Obj.Add('invoiceNo', VendLedgEntry."Document No.");
-                Obj.Add('vendorNo', VendLedgEntry."Vendor No.");
-                Obj.Add('amount', VendLedgEntry."Remaining Amount");
+                Obj.Add('invoiceNo', PurchInvHeader."No.");
+                Obj.Add('vendorNo', PurchInvHeader."Buy-from Vendor No.");
+                Obj.Add('amount', PurchInvHeader."Remaining Amount");
+                Obj.Add('dueDate', Format(PurchInvHeader."Due Date"));
 
                 Arr.Add(Obj);
-            until VendLedgEntry.Next() = 0;
+                InvoiceNos.Add(PurchInvHeader."No.");
+
+            until PurchInvHeader.Next() = 0;
 
         exit(Arr);
     end;
@@ -106,15 +116,26 @@ codeunit 50104 "Chiizu Payment Service"
     end;
 
     // --------------------------------------------------
-    // Mark all invoices as paid
+    // Mark ALL invoices as paid
     // --------------------------------------------------
-    local procedure MarkInvoicesAsPaid(var VendLedgEntry: Record "Vendor Ledger Entry")
+    local procedure MarkInvoicesPaid(InvoiceNos: List of [Code[20]])
+    var
+        Status: Record "Chiizu Invoice Status";
+        InvoiceNo: Code[20];
     begin
-        if VendLedgEntry.FindSet(true) then
-            repeat
-                VendLedgEntry.Validate("Chiizu Paid", true);
-                VendLedgEntry.Modify(true);
-            until VendLedgEntry.Next() = 0;
+        foreach InvoiceNo in InvoiceNos do begin
+            if not Status.Get(InvoiceNo) then begin
+                Status.Init();
+                Status."Invoice No." := InvoiceNo;
+                Status."Paid via Chiizu" := true;
+                Status."Payment Date" := Today();
+                Status.Insert(true);
+            end else begin
+                Status."Paid via Chiizu" := true;
+                Status."Payment Date" := Today();
+                Status.Modify(true);
+            end;
+        end;
     end;
 
     // --------------------------------------------------
@@ -124,7 +145,11 @@ codeunit 50104 "Chiizu Payment Service"
     begin
         exit(
             'BC-' +
-            Format(CurrentDateTime(), 0, '<Year4><Month,2><Day,2><Hour,2><Minute,2><Second,2>')
+            Format(
+                CurrentDateTime(),
+                0,
+                '<Year4><Month,2><Day,2><Hour,2><Minute,2><Second,2>'
+            )
         );
     end;
 
