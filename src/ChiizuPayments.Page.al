@@ -16,13 +16,6 @@ page 50101 "Chiizu Payments"
                 field("Remaining Amount"; Rec."Remaining Amount") { }
                 field("Chiizu Paid"; Rec."Chiizu Paid") { }
             }
-
-            // ✅ Proper part control here
-            /*   usercontrol(ChiizuPayments; "ChiizuPayments")
-              {
-                  ApplicationArea = All;
-                  Visible = true;
-              } */
         }
     }
 
@@ -38,38 +31,29 @@ page 50101 "Chiizu Payments"
 
                 trigger OnAction()
                 var
-                    VendLedgEntry: Record "Vendor Ledger Entry";
+                    SelectedEntries: Record "Vendor Ledger Entry";
                     PaymentService: Codeunit "Chiizu Payment Service";
-                    CountPaid: Integer;
+                    InvoiceCount: Integer;
                 begin
-                    // Apply selection filter
-                    CurrPage.SetSelectionFilter(VendLedgEntry);
+                    CurrPage.SetSelectionFilter(SelectedEntries);
 
-                    if VendLedgEntry.IsEmpty() then
+                    if SelectedEntries.IsEmpty() then
                         Error('Please select at least one invoice to pay.');
 
-                    if VendLedgEntry.FindSet() then
-                        repeat
-                            // Safety checks
-                            if VendLedgEntry."Remaining Amount" < 0 then
-                                Error(
-                                    'Invoice %1 has no remaining amount.',
-                                    VendLedgEntry."Document No."
-                                );
+                    InvoiceCount := SelectedEntries.Count();
 
-                            if VendLedgEntry."Chiizu Paid" then
-                                Error(
-                                    'Invoice %1 is already paid via Chiizu.',
-                                    VendLedgEntry."Document No."
-                                );
+                    // ✅ ONE bulk call
+                    PaymentService.PayVendorInvoicesBulk(SelectedEntries);
 
-                            // ✅ Initiate payment
-                            PaymentService.PayVendorInvoice(VendLedgEntry);
-                            CountPaid += 1;
+                    // ✅ End transaction so UI message is shown
+                    Commit();
 
-                        until VendLedgEntry.Next() = 0;
+                    Message(
+                        '%1 invoice(s) successfully submitted for payment via Chiizu.',
+                        InvoiceCount
+                    );
 
-                    Message('%1 invoice(s) paid successfully via Chiizu.', CountPaid);
+                    CurrPage.Update(false);
                 end;
             }
         }
