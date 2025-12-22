@@ -1,9 +1,11 @@
 page 50101 "Chiizu Purchase Invoices"
 {
     PageType = List;
-    ApplicationArea = All;
     SourceTable = "Purch. Inv. Header";
-    Caption = 'Chiizu — Purchase Invoices';
+    ApplicationArea = All;
+    UsageCategory = Lists;
+    Caption = 'Chiizu Purchase Invoices';
+    InstructionalText = 'Select an invoice to see details in the Info pane.';
 
     layout
     {
@@ -13,19 +15,21 @@ page 50101 "Chiizu Purchase Invoices"
             {
                 field("No."; Rec."No.")
                 {
-                    Caption = 'Invoice No';
+                    ApplicationArea = All;
+                }
+
+                field("Buy-from Vendor No."; Rec."Buy-from Vendor No.")
+                {
                     ApplicationArea = All;
                 }
 
                 field("Buy-from Vendor Name"; Rec."Buy-from Vendor Name")
                 {
-                    Caption = 'Vendor Name';
                     ApplicationArea = All;
                 }
 
-                field("Pay-to Contact"; Rec."Pay-to Contact")
+                field("Vendor Invoice No."; Rec."Vendor Invoice No.")
                 {
-                    Caption = 'Contact';
                     ApplicationArea = All;
                 }
 
@@ -34,25 +38,42 @@ page 50101 "Chiizu Purchase Invoices"
                     ApplicationArea = All;
                 }
 
-                field("Amount Including VAT"; Rec."Amount Including VAT")
+                field(Amount; Rec.Amount)
                 {
-                    Caption = 'Invoice Amount';
                     ApplicationArea = All;
                 }
 
-                field("Remaining Amount"; Rec."Remaining Amount")
-                {
-                    Caption = 'Remaining Amount';
-                    ApplicationArea = All;
-                }
-
-                // ✅ ADD THIS FIELD HERE
+                // ✅ Chiizu status (from custom table)
                 field("Chiizu Paid"; IsChiizuPaid())
                 {
                     ApplicationArea = All;
                 }
             }
         }
+
+        // =================================================
+        // RIGHT-HAND DETAILS / FACTBOX PANE
+        // =================================================
+        area(factboxes)
+        {
+            systempart(Links; Links) { }
+            systempart(Notes; Notes) { }
+
+            // ✅ Correct Incoming Document FactBox (POSTED invoices)
+            part(IncomingDoc; "Incoming Doc. Attach. FactBox")
+            {
+                ApplicationArea = All;
+                SubPageLink = "Document No." = field("No.");
+            }
+
+            // ✅ Correct Vendor FactBox
+            part(VendorDetails; "Vendor Details FactBox")
+            {
+                ApplicationArea = All;
+                SubPageLink = "No." = field("Buy-from Vendor No.");
+            }
+        }
+
     }
 
     actions
@@ -61,38 +82,31 @@ page 50101 "Chiizu Purchase Invoices"
         {
             action(PayWithChiizu)
             {
-                ApplicationArea = All;
-                Caption = 'Pay Selected Invoices';
+                Caption = 'Pay with Chiizu';
                 Image = Payment;
+                ApplicationArea = All;
 
                 trigger OnAction()
                 var
-                    SelectedInvoices: Record "Purch. Inv. Header";
+                    PurchInvHeader: Record "Purch. Inv. Header";
                     PaymentService: Codeunit "Chiizu Payment Service";
-                    InvoiceCount: Integer;
                 begin
-                    CurrPage.SetSelectionFilter(SelectedInvoices);
+                    CurrPage.SetSelectionFilter(PurchInvHeader);
 
-                    if SelectedInvoices.IsEmpty() then
-                        Error('Please select at least one invoice.');
+                    if PurchInvHeader.IsEmpty() then
+                        Error('Please select at least one purchase invoice.');
 
-                    InvoiceCount := SelectedInvoices.Count();
+                    PaymentService.PayPurchaseInvoicesBulk(PurchInvHeader);
 
-                    PaymentService.PayPurchaseInvoicesBulk(SelectedInvoices);
-
-                    Commit();
-
-                    Message(
-                        '%1 purchase invoice(s) submitted for payment via Chiizu.',
-                        InvoiceCount
-                    );
-
-                    CurrPage.Update(false);
+                    Message('Selected invoice(s) sent to Chiizu successfully.');
                 end;
             }
         }
     }
 
+    // =================================================
+    // LOCAL HELPERS
+    // =================================================
     local procedure IsChiizuPaid(): Boolean
     var
         Status: Record "Chiizu Invoice Status";
