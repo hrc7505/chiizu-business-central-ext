@@ -1,6 +1,6 @@
 controladdin "ChiizuPayments"
 {
-    Scripts = 'scripts/chiizu-connect.js';
+    //Scripts = 'scripts/chiizu-connect.js';
     //StartupScript = 'scripts/startup.js';
     RequestedHeight = 500;
     RequestedWidth = 800;
