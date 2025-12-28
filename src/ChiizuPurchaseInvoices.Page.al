@@ -1,4 +1,4 @@
-page 50101 "Chiizu Purchase Invoices"
+/* page 50101 "Chiizu Purchase Invoices"
 {
     PageType = List;
     SourceTable = "Purch. Inv. Header";
@@ -117,3 +117,4 @@ page 50101 "Chiizu Purchase Invoices"
         exit(false);
     end;
 }
+ */

@@ -1,6 +1,6 @@
 codeunit 50104 "Chiizu Payment Service"
 {
-    procedure PayPurchaseInvoicesBulk(var PurchInvHeader: Record "Purch. Inv. Header")
+    procedure PayPurchaseInvoicesBulk(var PurchHeader: Record "Purchase Header")
     var
         Setup: Record "Chiizu Setup";
         Payload: JsonObject;
@@ -15,67 +15,69 @@ codeunit 50104 "Chiizu Payment Service"
         if Setup."API Key" = '' then
             Error('Chiizu API Key is missing.');
 
-        // Build payload + collect invoice numbers
-        Invoices := BuildPurchaseInvoiceArray(PurchInvHeader, InvoiceNos);
+        Invoices := BuildPurchaseInvoiceArray(PurchHeader, InvoiceNos);
 
         if Invoices.Count() = 0 then
             Error('No valid invoices found for payment.');
 
-        Clear(Payload);
         Payload.Add('batchId', CreateBatchId());
         Payload.Add('invoices', Invoices);
 
-        // Single bulk API call
         CallBulkPaymentAPI(Setup, Payload);
 
-        // Mark ALL invoices as paid
         MarkInvoicesPaid(InvoiceNos);
     end;
 
     // --------------------------------------------------
-    // Build JSON array from selected invoices
+    // Build JSON from Purchase Header (UNPOSTED)
     // --------------------------------------------------
     local procedure BuildPurchaseInvoiceArray(
-        var PurchInvHeader: Record "Purch. Inv. Header";
+        var PurchHeader: Record "Purchase Header";
         var InvoiceNos: List of [Code[20]]
     ): JsonArray
     var
         Obj: JsonObject;
         Arr: JsonArray;
         Status: Record "Chiizu Invoice Status";
+        PayableAmount: Decimal;
     begin
-        if PurchInvHeader.FindSet() then
+        if PurchHeader.FindSet() then
             repeat
-                if PurchInvHeader."Remaining Amount" < 0 then
+                // REQUIRED for FlowFields
+                PurchHeader.CalcFields("Amount Including VAT");
+
+                PayableAmount := PurchHeader."Amount Including VAT";
+
+                if PayableAmount <= 0 then
                     Error(
-                        'Invoice %1 has no remaining amount.',
-                        PurchInvHeader."No."
+                        'Invoice %1 has no payable amount %2.',
+                        PurchHeader."No.",
+                        PayableAmount
                     );
 
-                // Check status table instead of posted invoice
-                if Status.Get(PurchInvHeader."No.") then
+                if Status.Get(PurchHeader."No.") then
                     if Status."Paid via Chiizu" then
                         Error(
                             'Invoice %1 is already paid via Chiizu.',
-                            PurchInvHeader."No."
+                            PurchHeader."No."
                         );
 
                 Clear(Obj);
-                Obj.Add('invoiceNo', PurchInvHeader."No.");
-                Obj.Add('vendorNo', PurchInvHeader."Buy-from Vendor No.");
-                Obj.Add('amount', PurchInvHeader."Remaining Amount");
-                Obj.Add('dueDate', Format(PurchInvHeader."Due Date"));
+                Obj.Add('invoiceNo', PurchHeader."No.");
+                Obj.Add('vendorNo', PurchHeader."Buy-from Vendor No.");
+                Obj.Add('amount', PayableAmount);
+                Obj.Add('dueDate', Format(PurchHeader."Due Date"));
 
                 Arr.Add(Obj);
-                InvoiceNos.Add(PurchInvHeader."No.");
+                InvoiceNos.Add(PurchHeader."No.");
 
-            until PurchInvHeader.Next() = 0;
+            until PurchHeader.Next() = 0;
 
         exit(Arr);
     end;
 
     // --------------------------------------------------
-    // HTTP bulk payment call
+    // HTTP call
     // --------------------------------------------------
     local procedure CallBulkPaymentAPI(Setup: Record "Chiizu Setup"; Payload: JsonObject)
     var
@@ -116,7 +118,7 @@ codeunit 50104 "Chiizu Payment Service"
     end;
 
     // --------------------------------------------------
-    // Mark ALL invoices as paid
+    // Status table
     // --------------------------------------------------
     local procedure MarkInvoicesPaid(InvoiceNos: List of [Code[20]])
     var
@@ -138,18 +140,11 @@ codeunit 50104 "Chiizu Payment Service"
         end;
     end;
 
-    // --------------------------------------------------
-    // Helpers
-    // --------------------------------------------------
     local procedure CreateBatchId(): Code[50]
     begin
         exit(
             'BC-' +
-            Format(
-                CurrentDateTime(),
-                0,
-                '<Year4><Month,2><Day,2><Hour,2><Minute,2><Second,2>'
-            )
+            Format(CurrentDateTime(), 0, '<Year4><Month,2><Day,2><Hour,2><Minute,2><Second,2>')
         );
     end;
 
