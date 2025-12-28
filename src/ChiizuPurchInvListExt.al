@@ -14,13 +14,23 @@ pageextension 50101 "Chiizu Purch Invoices Ext" extends "Purchase Invoices"
             Visible = true;
         }
 
+        modify("Location Code")
+        {
+            Visible = false;
+        }
+
+        modify("Assigned User ID")
+        {
+            Visible = false;
+        }
+
         addafter("Amount")
         {
             field("Payable Amount"; Rec."Amount Including VAT")
             {
                 ApplicationArea = All;
                 Caption = 'Payable Amount';
-                ToolTip = 'Full invoice amount (invoice not posted yet).';
+                ToolTip = 'Full invoice amount (invoice not posted yet). Includes VAT.';
             }
         }
 
