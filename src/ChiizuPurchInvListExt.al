@@ -1,94 +1,10 @@
+
 pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoices"
 {
     Caption = 'Chiizu | Posted Purchase Invoices';
 
     layout
     {
-        modify("No.")
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify("Vendor Invoice No.")
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify("Buy-from Vendor No.")
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify("Buy-from Vendor Name")
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify("Currency Code")
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify(Amount)
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify("Amount Including VAT")
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify("Location Code")
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify("No. Printed")
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify("Due Date")
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify("Remaining Amount")
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify(Closed)
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify(Cancelled)
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-        modify(Corrective)
-        {
-            Visible = true;
-            ApplicationArea = Basic, Suite;
-
-        }
-
         addafter("Remaining Amount")
         {
             field("Chiizu Paid"; IsChiizuPaid())
@@ -103,6 +19,9 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
     {
         addlast(Processing)
         {
+            // --------------------------
+            // Pay Now (Bulk in a single API call)
+            // --------------------------
             action(PayWithChiizu)
             {
                 Caption = 'Pay with Chiizu';
@@ -114,23 +33,32 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
 
                 trigger OnAction()
                 var
-                    VendLedgEntry: Record "Vendor Ledger Entry";
                     PaymentService: Codeunit "Chiizu Payment Service";
+                    PurchHeader: Record "Purch. Inv. Header";
+                    SelectedInvoiceNos: List of [Code[20]];
                 begin
-                    VendLedgEntry.SetRange(
-                        "Document Type",
-                        VendLedgEntry."Document Type"::Invoice
-                    );
-                    VendLedgEntry.SetRange("Document No.", Rec."No.");
-                    VendLedgEntry.SetRange(Open, true);
+                    // Get the selection from the list page
+                    CurrPage.SetSelectionFilter(PurchHeader);
 
-                    if not VendLedgEntry.FindFirst() then
-                        Error('No open vendor ledger entry found.');
+                    if PurchHeader.IsEmpty() then
+                        Error('Please select at least one invoice.');
 
-                    PaymentService.PayVendorLedgerEntry(VendLedgEntry);
+                    // Collect selected invoice numbers
+                    if PurchHeader.FindSet() then
+                        repeat
+                            SelectedInvoiceNos.Add(PurchHeader."No.");
+                        until PurchHeader.Next() = 0;
+
+                    // Single bulk call: validates all, builds payload, calls API once
+                    PaymentService.PayInvoices(SelectedInvoiceNos);
+
+                    Message('Selected invoice(s) were successfully paid via Chiizu.');
                 end;
             }
 
+            // --------------------------
+            // Schedule Payment
+            // --------------------------
             action(ScheduleChiizuPayment)
             {
                 Caption = 'Schedule Payment';
@@ -142,15 +70,19 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                 trigger OnAction()
                 var
                     SchedulePage: Page "Chiizu Schedule Payment";
-                    PurchHeader: Record "Purchase Header";
+                    PurchHeader: Record "Purch. Inv. Header";
                 begin
-                    PurchHeader.Get(
-                        PurchHeader."Document Type"::Invoice,
-                        Rec."No."
-                    );
+                    CurrPage.SetSelectionFilter(PurchHeader);
 
-                    SchedulePage.SetPurchaseHeader(PurchHeader);
-                    SchedulePage.RunModal();
+                    if PurchHeader.Count <> 1 then
+                        Error('Please select exactly one invoice to schedule.');
+
+                    // Use the selected record, not Rec
+                    if PurchHeader.FindFirst() then begin
+                        SchedulePage.SetPurchaseHeader(PurchHeader);
+                        SchedulePage.RunModal();
+                    end else
+                        Error('Unable to resolve selected invoice.');
                 end;
             }
         }
@@ -165,7 +97,6 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
     begin
         if Status.Get(Rec."No.") then
             exit(Status."Paid via Chiizu");
-
         exit(false);
     end;
 }

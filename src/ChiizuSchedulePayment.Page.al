@@ -3,7 +3,6 @@ page 50120 "Chiizu Schedule Payment"
     PageType = Card;
     SourceTable = "Chiizu Scheduled Payment";
     SourceTableTemporary = true;
-
     Caption = 'Schedule Payment (Chiizu)';
     ApplicationArea = All;
 
@@ -13,31 +12,14 @@ page 50120 "Chiizu Schedule Payment"
         {
             group(Invoice)
             {
-                field("Invoice No."; Rec."Invoice No.")
-                {
-                    ApplicationArea = All;
-                    Editable = false;
-                }
-
-                field("Vendor No."; Rec."Vendor No.")
-                {
-                    ApplicationArea = All;
-                    Editable = false;
-                }
-
-                field(Amount; Rec.Amount)
-                {
-                    ApplicationArea = All;
-                    Editable = false;
-                }
+                field("Invoice No."; Rec."Invoice No.") { Editable = false; }
+                field("Vendor No."; Rec."Vendor No.") { Editable = false; }
+                field(Amount; Rec.Amount) { Editable = false; }
             }
 
             group(Scheduling)
             {
-                field("Scheduled Date"; Rec."Scheduled Date")
-                {
-                    ApplicationArea = All;
-                }
+                field("Scheduled Date"; Rec."Scheduled Date") { ApplicationArea = All; }
             }
         }
     }
@@ -56,7 +38,6 @@ page 50120 "Chiizu Schedule Payment"
                 trigger OnAction()
                 begin
                     ValidateData();
-
                     Rec.Status := Rec.Status::Scheduled;
                     Rec.Insert(true);
 
@@ -74,7 +55,6 @@ page 50120 "Chiizu Schedule Payment"
             {
                 Caption = 'Cancel';
                 Image = Cancel;
-
                 trigger OnAction()
                 begin
                     CurrPage.Close();
@@ -84,35 +64,30 @@ page 50120 "Chiizu Schedule Payment"
     }
 
     // -------------------------------------------------
-    // CALLED FROM PAGE EXTENSION
+    // Set data from selected Purch. Inv. Header
     // -------------------------------------------------
-    procedure SetPurchaseHeader(PurchHeader: Record "Purchase Header")
+    procedure SetPurchaseHeader(PurchHeader: Record "Purch. Inv. Header")
     var
         VendLedgEntry: Record "Vendor Ledger Entry";
     begin
         Rec.Reset();
         Rec.DeleteAll();
 
-        // 🔍 Find the POSTED invoice ledger entry
         VendLedgEntry.SetRange("Document Type", VendLedgEntry."Document Type"::Invoice);
         VendLedgEntry.SetRange("Document No.", PurchHeader."No.");
         VendLedgEntry.SetRange(Open, true);
 
         if not VendLedgEntry.FindFirst() then
-            Error(
-                'Invoice %1 is not posted or has no remaining amount.',
-                PurchHeader."No."
-            );
+            Error('Invoice %1 has no remaining payable amount.', PurchHeader."No.");
+
+        VendLedgEntry.CalcFields("Remaining Amount");
 
         Rec.Init();
         Rec."Invoice No." := VendLedgEntry."Document No.";
         Rec."Vendor No." := VendLedgEntry."Vendor No.";
-        Rec.Amount := VendLedgEntry."Remaining Amount"; // ✅ MOST ACCURATE
+        Rec.Amount := VendLedgEntry."Remaining Amount"; // ✅ Accurate
         Rec."Scheduled Date" := Today;
         Rec.Status := Rec.Status::Open;
-
-        // ⭐ THIS IS WHY DATA SHOWS ON CARD
-        Rec.Insert();
     end;
 
     local procedure ValidateData()
