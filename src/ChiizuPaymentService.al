@@ -1,6 +1,9 @@
 codeunit 50104 "Chiizu Payment Service"
 {
-    procedure PayPurchaseInvoicesBulk(var PurchHeader: Record "Purchase Header")
+    // ==================================================
+    // PUBLIC API – PAY POSTED INVOICE (LEDGER BASED)
+    // ==================================================
+    procedure PayVendorLedgerEntry(var VendLedgEntry: Record "Vendor Ledger Entry")
     var
         Setup: Record "Chiizu Setup";
         Payload: JsonObject;
@@ -12,10 +15,10 @@ codeunit 50104 "Chiizu Payment Service"
         if Setup."API Base URL" = '' then
             Error('Chiizu API Base URL is missing.');
 
-        if Setup."API Key" = '' then
-            Error('Chiizu API Key is missing.');
+        if not VendLedgEntry.Open then
+            Error('Vendor ledger entry is already closed.');
 
-        Invoices := BuildPurchaseInvoiceArray(PurchHeader, InvoiceNos);
+        Invoices := BuildLedgerInvoiceArray(VendLedgEntry, InvoiceNos);
 
         if Invoices.Count() = 0 then
             Error('No valid invoices found for payment.');
@@ -28,57 +31,50 @@ codeunit 50104 "Chiizu Payment Service"
         MarkInvoicesPaid(InvoiceNos);
     end;
 
-    // --------------------------------------------------
-    // Build JSON from Purchase Header (UNPOSTED)
-    // --------------------------------------------------
-    local procedure BuildPurchaseInvoiceArray(
-        var PurchHeader: Record "Purchase Header";
+    // ==================================================
+    // BUILD JSON FROM VENDOR LEDGER ENTRY (POSTED)
+    // ==================================================
+    local procedure BuildLedgerInvoiceArray(
+        var VendLedgEntry: Record "Vendor Ledger Entry";
         var InvoiceNos: List of [Code[20]]
     ): JsonArray
     var
         Obj: JsonObject;
         Arr: JsonArray;
         Status: Record "Chiizu Invoice Status";
-        PayableAmount: Decimal;
+        RemainingAmount: Decimal;
     begin
-        if PurchHeader.FindSet() then
-            repeat
-                // REQUIRED for FlowFields
-                PurchHeader.CalcFields("Amount Including VAT");
+        VendLedgEntry.CalcFields("Remaining Amount");
+        RemainingAmount := VendLedgEntry."Remaining Amount";
 
-                PayableAmount := PurchHeader."Amount Including VAT";
+        if RemainingAmount <= 0 then
+            Error(
+                'Invoice %1 has no remaining payable amount.',
+                VendLedgEntry."Document No."
+            );
 
-                if PayableAmount <= 0 then
-                    Error(
-                        'Invoice %1 has no payable amount %2.',
-                        PurchHeader."No.",
-                        PayableAmount
-                    );
+        if Status.Get(VendLedgEntry."Document No.") then
+            if Status."Paid via Chiizu" then
+                Error(
+                    'Invoice %1 is already paid via Chiizu.',
+                    VendLedgEntry."Document No."
+                );
 
-                if Status.Get(PurchHeader."No.") then
-                    if Status."Paid via Chiizu" then
-                        Error(
-                            'Invoice %1 is already paid via Chiizu.',
-                            PurchHeader."No."
-                        );
+        Clear(Obj);
+        Obj.Add('invoiceNo', VendLedgEntry."Document No.");
+        Obj.Add('vendorNo', VendLedgEntry."Vendor No.");
+        Obj.Add('amount', RemainingAmount);
+        Obj.Add('postingDate', Format(VendLedgEntry."Posting Date"));
 
-                Clear(Obj);
-                Obj.Add('invoiceNo', PurchHeader."No.");
-                Obj.Add('vendorNo', PurchHeader."Buy-from Vendor No.");
-                Obj.Add('amount', PayableAmount);
-                Obj.Add('dueDate', Format(PurchHeader."Due Date"));
-
-                Arr.Add(Obj);
-                InvoiceNos.Add(PurchHeader."No.");
-
-            until PurchHeader.Next() = 0;
+        Arr.Add(Obj);
+        InvoiceNos.Add(VendLedgEntry."Document No.");
 
         exit(Arr);
     end;
 
-    // --------------------------------------------------
-    // HTTP call
-    // --------------------------------------------------
+    // ==================================================
+    // HTTP CALL
+    // ==================================================
     local procedure CallBulkPaymentAPI(Setup: Record "Chiizu Setup"; Payload: JsonObject)
     var
         Client: HttpClient;
@@ -98,28 +94,28 @@ codeunit 50104 "Chiizu Payment Service"
 
         Headers := Client.DefaultRequestHeaders();
         Headers.Clear();
-        Headers.Add('Authorization', 'Bearer ' + Setup."API Key");
+        Headers.Add('Authorization', 'Bearer {PASS_TOKEN_HERE}');
 
         Request.Method := 'POST';
         Request.SetRequestUri(Setup."API Base URL");
         Request.Content := Content;
 
         if not Client.Send(Request, Response) then
-            Error('Failed to call Chiizu bulk payment API.');
+            Error('Failed to call Chiizu payment API.');
 
         if not Response.IsSuccessStatusCode() then begin
             Response.Content.ReadAs(ResponseText);
             Error(
-                'Chiizu bulk payment failed. Status: %1, Response: %2',
+                'Chiizu payment failed. Status: %1, Response: %2',
                 Response.HttpStatusCode(),
                 ResponseText
             );
         end;
     end;
 
-    // --------------------------------------------------
-    // Status table
-    // --------------------------------------------------
+    // ==================================================
+    // STATUS TABLE
+    // ==================================================
     local procedure MarkInvoicesPaid(InvoiceNos: List of [Code[20]])
     var
         Status: Record "Chiizu Invoice Status";
@@ -140,6 +136,9 @@ codeunit 50104 "Chiizu Payment Service"
         end;
     end;
 
+    // ==================================================
+    // HELPERS
+    // ==================================================
     local procedure CreateBatchId(): Code[50]
     begin
         exit(

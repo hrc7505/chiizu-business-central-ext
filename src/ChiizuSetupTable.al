@@ -9,7 +9,6 @@ table 50103 "Chiizu Setup"
             DataClassification = SystemMetadata;
         }
         field(10; "API Base URL"; Text[250]) { }
-        field(20; "API Key"; Text[100]) { }
         field(30; "Webhook Secret"; Text[100]) { }
         field(40; "Test Mode"; Boolean) { }
     }
