@@ -20,7 +20,7 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
         addlast(Processing)
         {
             // --------------------------
-            // Pay Now (Bulk in a single API call)
+            // Pay Now (Bulk single API call)
             // --------------------------
             action(PayWithChiizu)
             {
@@ -37,27 +37,23 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                     PurchHeader: Record "Purch. Inv. Header";
                     SelectedInvoiceNos: List of [Code[20]];
                 begin
-                    // Get the selection from the list page
                     CurrPage.SetSelectionFilter(PurchHeader);
 
                     if PurchHeader.IsEmpty() then
                         Error('Please select at least one invoice.');
 
-                    // Collect selected invoice numbers
                     if PurchHeader.FindSet() then
                         repeat
                             SelectedInvoiceNos.Add(PurchHeader."No.");
                         until PurchHeader.Next() = 0;
 
-                    // Single bulk call: validates all, builds payload, calls API once
                     PaymentService.PayInvoices(SelectedInvoiceNos);
-
                     Message('Selected invoice(s) were successfully paid via Chiizu.');
                 end;
             }
 
             // --------------------------
-            // Schedule Payment
+            // Schedule Payment (Bulk single API call)
             // --------------------------
             action(ScheduleChiizuPayment)
             {
@@ -69,28 +65,27 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
 
                 trigger OnAction()
                 var
-                    SchedulePage: Page "Chiizu Schedule Payment";
                     PurchHeader: Record "Purch. Inv. Header";
+                    SelectedInvoiceNos: List of [Code[20]];
+                    SchedulePage: Page "Chiizu Schedule Payment";
                 begin
                     CurrPage.SetSelectionFilter(PurchHeader);
 
-                    if PurchHeader.Count <> 1 then
-                        Error('Please select exactly one invoice to schedule.');
+                    if PurchHeader.IsEmpty() then
+                        Error('Please select at least one invoice to schedule.');
 
-                    // Use the selected record, not Rec
-                    if PurchHeader.FindFirst() then begin
-                        SchedulePage.SetPurchaseHeader(PurchHeader);
-                        SchedulePage.RunModal();
-                    end else
-                        Error('Unable to resolve selected invoice.');
+                    if PurchHeader.FindSet() then
+                        repeat
+                            SelectedInvoiceNos.Add(PurchHeader."No.");
+                        until PurchHeader.Next() = 0;
+
+                    SchedulePage.SetSelectedInvoices(SelectedInvoiceNos);
+                    SchedulePage.RunModal();
                 end;
             }
         }
     }
 
-    // -----------------------------
-    // Helpers
-    // -----------------------------
     local procedure IsChiizuPaid(): Boolean
     var
         Status: Record "Chiizu Invoice Status";

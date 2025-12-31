@@ -1,6 +1,9 @@
 
 codeunit 50104 "Chiizu Payment Service"
 {
+    // --------------------------
+    // BULK PAYMENT (single API call, robust VLE resolution)
+    // --------------------------
     procedure PayInvoices(SelectedInvoiceNos: List of [Code[20]])
     var
         Setup: Record "Chiizu Setup";
@@ -16,6 +19,10 @@ codeunit 50104 "Chiizu Payment Service"
         HasErrors: Boolean;
         RemainingAmount: Decimal;
         CurrencyCode: Code[10];
+
+        PayableVLE: Record "Vendor Ledger Entry";
+        BestRemaining: Decimal;
+        FoundPayable: Boolean;
     begin
         if SelectedInvoiceNos.Count() = 0 then
             Error('No invoices were provided.');
@@ -28,72 +35,97 @@ codeunit 50104 "Chiizu Payment Service"
         ErrorText := '';
         HasErrors := false;
 
-        // Validate each invoice and build the single payload
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
-            // Find the open Vendor Ledger Entry for the posted purchase invoice
+            // Try Open VLE with non-zero remaining
             VendLedgEntry.Reset();
             VendLedgEntry.SetRange("Document Type", VendLedgEntry."Document Type"::Invoice);
             VendLedgEntry.SetRange("Document No.", InvNo);
             VendLedgEntry.SetRange(Open, true);
 
-            if not VendLedgEntry.FindFirst() then begin
-                ErrorText += StrSubstNo('• No open vendor ledger entry found for invoice %1.\%2', InvNo, '');
+            FoundPayable := false;
+            BestRemaining := 0;
+
+            if VendLedgEntry.FindSet() then
+                repeat
+                    VendLedgEntry.CalcFields("Remaining Amount");
+                    if Round(Abs(VendLedgEntry."Remaining Amount"), 0.01, '=') > 0 then begin
+                        FoundPayable := true;
+                        PayableVLE := VendLedgEntry;
+                        break;
+                    end;
+                until VendLedgEntry.Next() = 0;
+
+            // Fallback: any VLE with non-zero remaining (choose max)
+            if not FoundPayable then begin
+                VendLedgEntry.Reset();
+                VendLedgEntry.SetRange("Document Type", VendLedgEntry."Document Type"::Invoice);
+                VendLedgEntry.SetRange("Document No.", InvNo);
+                if VendLedgEntry.FindSet() then
+                    repeat
+                        VendLedgEntry.CalcFields("Remaining Amount");
+                        if Round(Abs(VendLedgEntry."Remaining Amount"), 0.01, '=') > 0 then
+                            if Abs(VendLedgEntry."Remaining Amount") > BestRemaining then begin
+                                BestRemaining := Abs(VendLedgEntry."Remaining Amount");
+                                PayableVLE := VendLedgEntry;
+                                FoundPayable := true;
+                            end;
+                    until VendLedgEntry.Next() = 0;
+            end;
+
+            if not FoundPayable then begin
+                ErrorText += StrSubstNo('• No payable vendor ledger entry found for invoice %1.\n', InvNo);
                 HasErrors := true;
                 continue;
             end;
 
-            VendLedgEntry.CalcFields("Remaining Amount", "Remaining Amt. (LCY)");
-
-            // Remaining Amount is often negative for payables; use absolute value
-            RemainingAmount := Abs(VendLedgEntry."Remaining Amount");
-
-            if Round(RemainingAmount, 0.01, '=') = 0 then begin
-                ErrorText += StrSubstNo('• Invoice %1 has no remaining payable amount.\%2', InvNo, '');
-                HasErrors := true;
-                continue;
-            end;
-
-            // Check if already marked as paid via Chiizu
+            // Already paid via Chiizu?
             if Status.Get(InvNo) then
                 if Status."Paid via Chiizu" then begin
-                    ErrorText += StrSubstNo('• Invoice %1 is already paid via Chiizu.\%2', InvNo, '');
+                    ErrorText += StrSubstNo('• Invoice %1 is already paid via Chiizu.\n', InvNo);
                     HasErrors := true;
                     continue;
                 end;
 
-            // Build object for this invoice (positive amount)
+            // Build payload item
+            PayableVLE.CalcFields("Remaining Amount", "Remaining Amt. (LCY)");
+            RemainingAmount := Abs(PayableVLE."Remaining Amount");
+
+            if Round(RemainingAmount, 0.01, '=') = 0 then begin
+                ErrorText += StrSubstNo('• Invoice %1 has no remaining payable amount.\n', InvNo);
+                HasErrors := true;
+                continue;
+            end;
+
             Clear(Obj);
             Obj.Add('invoiceNo', InvNo);
-            Obj.Add('vendorNo', VendLedgEntry."Vendor No.");
+            Obj.Add('vendorNo', PayableVLE."Vendor No.");
             Obj.Add('amount', RemainingAmount);
-            Obj.Add('postingDate', Format(VendLedgEntry."Posting Date"));
-            CurrencyCode := VendLedgEntry."Currency Code";
+            Obj.Add('postingDate', Format(PayableVLE."Posting Date", 0, '<Year4>-<Month,2>-<Day,2>'));
+            CurrencyCode := PayableVLE."Currency Code";
             if CurrencyCode <> '' then
                 Obj.Add('currency', CurrencyCode)
             else
-                Obj.Add('currency', 'LCY'); // Adjust to your API's convention
+                Obj.Add('currency', 'LCY');
 
             Invoices.Add(Obj);
             InvoiceNosToMarkPaid.Add(InvNo);
         end;
 
-        // If any invoice failed validation, stop and show aggregated errors
         if HasErrors then
             Error(ErrorText);
 
         if Invoices.Count() = 0 then
             Error('None of the selected invoices are payable.');
 
-        // Final bulk payload
         Payload.Add('batchId', CreateBatchId());
         Payload.Add('invoices', Invoices);
 
         // Single API call
-        CallBulkPaymentAPI(Setup, Payload);
+        CallBulkAPI(Setup, Payload, Setup."API Base URL");
 
-        // Mark all included invoices as paid via Chiizu
+        // Mark paid on success
         for i := 1 to InvoiceNosToMarkPaid.Count() do begin
             InvNo := InvoiceNosToMarkPaid.Get(i);
 
@@ -111,7 +143,197 @@ codeunit 50104 "Chiizu Payment Service"
         end;
     end;
 
-    local procedure CallBulkPaymentAPI(Setup: Record "Chiizu Setup"; Payload: JsonObject)
+    // --------------------------
+    // BULK SCHEDULING (single API call, robust VLE resolution)
+    // --------------------------
+    procedure ScheduleInvoices(var TempSchedule: Record "Chiizu Scheduled Payment" temporary): Integer
+    var
+        Setup: Record "Chiizu Setup";
+        Status: Record "Chiizu Invoice Status";
+        PersistentSchedule: Record "Chiizu Scheduled Payment";
+        VendLedgEntry: Record "Vendor Ledger Entry";
+        Payload: JsonObject;
+        Schedules: JsonArray;
+        Obj: JsonObject;
+        ErrorText: Text;
+        HasErrors: Boolean;
+        RemainingAmount: Decimal;
+        CurrencyCode: Code[10];
+        CountScheduled: Integer;
+
+        PayableVLE: Record "Vendor Ledger Entry";
+        BestRemaining: Decimal;
+        FoundPayable: Boolean;
+
+        NewEntryNo: Integer;
+    begin
+        TempSchedule.Reset();
+        if TempSchedule.IsEmpty() then
+            Error('No invoices were provided.');
+
+        GetOrCreateSetup(Setup);
+
+        Clear(Payload);
+        Clear(Schedules);
+        ErrorText := '';
+        HasErrors := false;
+        CountScheduled := 0;
+
+        if TempSchedule.FindSet() then
+            repeat
+                // Resolve payable VLE: try Open=true first, then fallback
+                VendLedgEntry.Reset();
+                VendLedgEntry.SetRange("Document Type", VendLedgEntry."Document Type"::Invoice);
+                VendLedgEntry.SetRange("Document No.", TempSchedule."Invoice No.");
+                VendLedgEntry.SetRange(Open, true);
+
+                FoundPayable := false;
+                BestRemaining := 0;
+
+                if VendLedgEntry.FindSet() then
+                    repeat
+                        VendLedgEntry.CalcFields("Remaining Amount");
+                        if Round(Abs(VendLedgEntry."Remaining Amount"), 0.01, '=') > 0 then begin
+                            FoundPayable := true;
+                            PayableVLE := VendLedgEntry;
+                            break;
+                        end;
+                    until VendLedgEntry.Next() = 0;
+
+                if not FoundPayable then begin
+                    VendLedgEntry.Reset();
+                    VendLedgEntry.SetRange("Document Type", VendLedgEntry."Document Type"::Invoice);
+                    VendLedgEntry.SetRange("Document No.", TempSchedule."Invoice No.");
+                    if VendLedgEntry.FindSet() then
+                        repeat
+                            VendLedgEntry.CalcFields("Remaining Amount");
+                            if Round(Abs(VendLedgEntry."Remaining Amount"), 0.01, '=') > 0 then
+                                if Abs(VendLedgEntry."Remaining Amount") > BestRemaining then begin
+                                    BestRemaining := Abs(VendLedgEntry."Remaining Amount");
+                                    PayableVLE := VendLedgEntry;
+                                    FoundPayable := true;
+                                end;
+                        until VendLedgEntry.Next() = 0;
+                end;
+
+                if not FoundPayable then begin
+                    ErrorText += StrSubstNo('• No payable vendor ledger entry found for invoice %1.\n', TempSchedule."Invoice No.");
+                    HasErrors := true;
+                    continue;
+                end;
+
+                // Validate schedule date
+                if TempSchedule."Scheduled Date" < Today then begin
+                    ErrorText += StrSubstNo('• Scheduled date for invoice %1 must be today or later.\n', TempSchedule."Invoice No.");
+                    HasErrors := true;
+                    continue;
+                end;
+
+                // Disallow scheduling if already paid via Chiizu
+                if Status.Get(TempSchedule."Invoice No.") then
+                    if Status."Paid via Chiizu" then begin
+                        ErrorText += StrSubstNo('• Invoice %1 is already paid via Chiizu.\n', TempSchedule."Invoice No.");
+                        HasErrors := true;
+                        continue;
+                    end;
+
+                // Disallow duplicate active schedule (business rule)
+                PersistentSchedule.Reset();
+                PersistentSchedule.SetRange("Invoice No.", TempSchedule."Invoice No.");
+                if PersistentSchedule.FindFirst() then
+                    if PersistentSchedule.Status = PersistentSchedule.Status::Scheduled then begin
+                        ErrorText += StrSubstNo('• Invoice %1 already has an active schedule.\n', TempSchedule."Invoice No.");
+                        HasErrors := true;
+                        continue;
+                    end;
+
+                // Build schedule payload item
+                PayableVLE.CalcFields("Remaining Amount", "Remaining Amt. (LCY)");
+                RemainingAmount := Abs(PayableVLE."Remaining Amount");
+
+                if Round(RemainingAmount, 0.01, '=') = 0 then begin
+                    ErrorText += StrSubstNo('• Invoice %1 has no remaining payable amount.\n', TempSchedule."Invoice No.");
+                    HasErrors := true;
+                    continue;
+                end;
+
+                Clear(Obj);
+                Obj.Add('invoiceNo', TempSchedule."Invoice No.");
+                Obj.Add('vendorNo', PayableVLE."Vendor No.");
+                Obj.Add('amount', RemainingAmount);
+                Obj.Add('scheduledDate', Format(TempSchedule."Scheduled Date", 0, '<Year4>-<Month,2>-<Day,2>'));
+                CurrencyCode := PayableVLE."Currency Code";
+                if CurrencyCode <> '' then
+                    Obj.Add('currency', CurrencyCode)
+                else
+                    Obj.Add('currency', 'LCY');
+
+                Schedules.Add(Obj);
+            until TempSchedule.Next() = 0;
+
+        if HasErrors then
+            Error(ErrorText);
+
+        if Schedules.Count() = 0 then
+            Error('None of the selected invoices are eligible for scheduling.');
+
+        Payload.Add('batchId', CreateBatchId());
+        Payload.Add('schedules', Schedules);
+
+        // Single scheduling API call
+        CallBulkAPI(Setup, Payload, Setup."API Base URL"); // swap to Setup."Schedule API URL" if you have a dedicated endpoint
+
+        // Persist schedule rows on success
+        TempSchedule.Reset();
+        if TempSchedule.FindSet() then
+            repeat
+                // Compute next Entry No. in persistent table (handles non-AutoIncrement PKs)
+                NewEntryNo := GetNextScheduleEntryNo();
+
+                PersistentSchedule.Reset();
+                PersistentSchedule.SetRange("Invoice No.", TempSchedule."Invoice No.");
+                if PersistentSchedule.FindFirst() then begin
+                    // Update existing schedule for the invoice
+                    PersistentSchedule."Vendor No." := TempSchedule."Vendor No.";
+                    PersistentSchedule.Amount := TempSchedule.Amount;
+                    PersistentSchedule."Scheduled Date" := TempSchedule."Scheduled Date";
+                    PersistentSchedule.Status := PersistentSchedule.Status::Scheduled;
+                    PersistentSchedule.Modify(true);
+                end else begin
+                    PersistentSchedule.Init();
+                    PersistentSchedule."Entry No." := NewEntryNo; // <<< ensure unique PK
+                    PersistentSchedule."Invoice No." := TempSchedule."Invoice No.";
+                    PersistentSchedule."Vendor No." := TempSchedule."Vendor No.";
+                    PersistentSchedule.Amount := TempSchedule.Amount;
+                    PersistentSchedule."Scheduled Date" := TempSchedule."Scheduled Date";
+                    PersistentSchedule.Status := PersistentSchedule.Status::Scheduled;
+                    PersistentSchedule.Insert(true);
+                end;
+
+                CountScheduled += 1;
+            until TempSchedule.Next() = 0;
+
+        exit(CountScheduled);
+    end;
+
+    // --------------------------
+    // Compute next Entry No. safely (persistent table)
+    // --------------------------
+    local procedure GetNextScheduleEntryNo(): Integer
+    var
+        T: Record "Chiizu Scheduled Payment";
+    begin
+        // Lock to avoid race when multiple users insert concurrently
+        T.LockTable();
+        if T.FindLast() then
+            exit(T."Entry No." + 1);
+        exit(1);
+    end;
+
+    // --------------------------
+    // HTTP helper (generic endpoint)
+    // --------------------------
+    local procedure CallBulkAPI(Setup: Record "Chiizu Setup"; Payload: JsonObject; Endpoint: Text)
     var
         Client: HttpClient;
         Request: HttpRequestMessage;
@@ -121,37 +343,37 @@ codeunit 50104 "Chiizu Payment Service"
         BodyText: Text;
         ResponseText: Text;
     begin
-        // Serialize payload to text content
         Payload.WriteTo(BodyText);
         Content.WriteFrom(BodyText);
 
-        // Content headers
         Content.GetHeaders(Headers);
         Headers.Clear();
         Headers.Add('Content-Type', 'application/json');
 
-        // Auth header (replace with your token handling)
         Headers := Client.DefaultRequestHeaders();
         Headers.Clear();
         Headers.Add('Authorization', 'Bearer {PASS_TOKEN_HERE}');
 
         Request.Method := 'POST';
-        Request.SetRequestUri(Setup."API Base URL");
+        Request.SetRequestUri(Endpoint);
         Request.Content := Content;
 
         if not Client.Send(Request, Response) then
-            Error('Failed to call Chiizu payment API.');
+            Error('Failed to call Chiizu API.');
 
         if not Response.IsSuccessStatusCode() then begin
             Response.Content.ReadAs(ResponseText);
-            Error('Chiizu payment failed. Status: %1, Response: %2',
+            Error('Chiizu request failed. Status: %1, Response: %2',
                   Response.HttpStatusCode(), ResponseText);
         end;
     end;
 
+    // --------------------------
+    // Common helpers
+    // --------------------------
     local procedure CreateBatchId(): Code[50]
     begin
-        exit('BC-' + Format(CurrentDateTime(), 0, '<Year4><Month,2><Day,2><Hour,2><Minute,2><Second,2>'));
+        exit('BC-' + Format(CurrentDateTime(), 0, '<Year4>-<Month,2>-<Day,2>T<Hour,2>:<Minute,2>:<Second,2>'));
     end;
 
     local procedure GetOrCreateSetup(var Setup: Record "Chiizu Setup")
