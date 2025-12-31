@@ -35,6 +35,7 @@ codeunit 50104 "Chiizu Payment Service"
         ErrorText := '';
         HasErrors := false;
 
+        // Validate each invoice and build payload
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
@@ -144,7 +145,7 @@ codeunit 50104 "Chiizu Payment Service"
     end;
 
     // --------------------------
-    // BULK SCHEDULING (single API call, robust VLE resolution)
+    // BULK SCHEDULING (single API call)
     // --------------------------
     procedure ScheduleInvoices(var TempSchedule: Record "Chiizu Scheduled Payment" temporary): Integer
     var
@@ -237,7 +238,7 @@ codeunit 50104 "Chiizu Payment Service"
                         continue;
                     end;
 
-                // Disallow duplicate active schedule (business rule)
+                // Disallow duplicate active schedule (business rule; adjust if you allow re-scheduling)
                 PersistentSchedule.Reset();
                 PersistentSchedule.SetRange("Invoice No.", TempSchedule."Invoice No.");
                 if PersistentSchedule.FindFirst() then
@@ -278,12 +279,13 @@ codeunit 50104 "Chiizu Payment Service"
             Error('None of the selected invoices are eligible for scheduling.');
 
         Payload.Add('batchId', CreateBatchId());
-        Payload.Add('schedules', Schedules);
+        Payload.Add('invoices', Schedules);
+        Payload.Add('isScheduled', true);
 
         // Single scheduling API call
-        CallBulkAPI(Setup, Payload, Setup."API Base URL"); // swap to Setup."Schedule API URL" if you have a dedicated endpoint
+        CallBulkAPI(Setup, Payload, Setup."API Base URL"); // use a dedicated Schedule URL if you have one
 
-        // Persist schedule rows on success
+        // Persist schedule rows on success (ensure unique Entry No. if your PK is not AutoIncrement)
         TempSchedule.Reset();
         if TempSchedule.FindSet() then
             repeat
@@ -301,7 +303,7 @@ codeunit 50104 "Chiizu Payment Service"
                     PersistentSchedule.Modify(true);
                 end else begin
                     PersistentSchedule.Init();
-                    PersistentSchedule."Entry No." := NewEntryNo; // <<< ensure unique PK
+                    PersistentSchedule."Entry No." := NewEntryNo; // ensure unique PK
                     PersistentSchedule."Invoice No." := TempSchedule."Invoice No.";
                     PersistentSchedule."Vendor No." := TempSchedule."Vendor No.";
                     PersistentSchedule.Amount := TempSchedule.Amount;
@@ -316,23 +318,16 @@ codeunit 50104 "Chiizu Payment Service"
         exit(CountScheduled);
     end;
 
-    // --------------------------
-    // Compute next Entry No. safely (persistent table)
-    // --------------------------
     local procedure GetNextScheduleEntryNo(): Integer
     var
         T: Record "Chiizu Scheduled Payment";
     begin
-        // Lock to avoid race when multiple users insert concurrently
         T.LockTable();
         if T.FindLast() then
             exit(T."Entry No." + 1);
         exit(1);
     end;
 
-    // --------------------------
-    // HTTP helper (generic endpoint)
-    // --------------------------
     local procedure CallBulkAPI(Setup: Record "Chiizu Setup"; Payload: JsonObject; Endpoint: Text)
     var
         Client: HttpClient;
@@ -368,9 +363,6 @@ codeunit 50104 "Chiizu Payment Service"
         end;
     end;
 
-    // --------------------------
-    // Common helpers
-    // --------------------------
     local procedure CreateBatchId(): Code[50]
     begin
         exit('BC-' + Format(CurrentDateTime(), 0, '<Year4>-<Month,2>-<Day,2>T<Hour,2>:<Minute,2>:<Second,2>'));

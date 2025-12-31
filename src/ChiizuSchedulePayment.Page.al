@@ -31,6 +31,7 @@ page 50120 "Chiizu Schedule Payment"
             repeater(Invoices)
             {
                 ShowCaption = true;
+
                 field("Entry No."; Rec."Entry No.")
                 {
                     ApplicationArea = All;
@@ -170,7 +171,7 @@ page 50120 "Chiizu Schedule Payment"
     begin
         Rec.Reset();
         Rec.DeleteAll();
-        NextEntryNo := 1; // <<< reset temp PK counter each load
+        NextEntryNo := 1; // reset temp PK counter each load
 
         ErrorText := '';
         HasErrors := false;
@@ -181,7 +182,7 @@ page 50120 "Chiizu Schedule Payment"
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
-            // Try Open VLE with non-zero remaining
+            // First try: Open invoice VLE with non-zero remaining
             VendLedgEntry.Reset();
             VendLedgEntry.SetRange("Document Type", VendLedgEntry."Document Type"::Invoice);
             VendLedgEntry.SetRange("Document No.", InvNo);
