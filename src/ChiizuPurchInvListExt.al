@@ -83,26 +83,6 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                     SchedulePage.RunModal();
                 end;
             }
-
-            // --------------------------
-            // Enable Scheduled Payment Automation (Job Queue)
-            // --------------------------
-            action(EnableScheduledAutomation)
-            {
-                Caption = 'Enable Scheduled Payment Automation';
-                Image = Setup;
-                ApplicationArea = All;
-                Promoted = true;
-                PromotedCategory = Process;
-
-                trigger OnAction()
-                var
-                    JobSetup: Codeunit "Chiizu Job Queue Setup";
-                begin
-                    JobSetup.EnsureScheduledPaymentJobQueue();
-                    Message('Chiizu Scheduled Payment automation is enabled via Job Queue.');
-                end;
-            }
         }
     }
 
