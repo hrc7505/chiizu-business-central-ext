@@ -5,12 +5,12 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
 
     layout
     {
-        addafter("Remaining Amount")
+        addafter("Amount Including VAT")
         {
-            field("Chiizu Paid"; IsChiizuPaid())
+            field(ChiizuStatus; ChiizuStatus)
             {
                 ApplicationArea = All;
-                ToolTip = 'Specifies whether this invoice was paid via Chiizu.';
+                Caption = 'Status';
             }
         }
     }
@@ -86,12 +86,27 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
         }
     }
 
-    local procedure IsChiizuPaid(): Boolean
     var
-        Status: Record "Chiizu Invoice Status";
+        ChiizuStatus: Enum "Chiizu Payment Status";
+
+    trigger OnAfterGetRecord()
+    var
+        ChiizuInvoiceStatus: Record "Chiizu Invoice Status";
+        PurchInvHeader: Record "Purch. Inv. Header";
     begin
-        if Status.Get(Rec."No.") then
-            exit(Status."Paid via Chiizu");
-        exit(false);
+        ChiizuStatus := ChiizuStatus::Open;
+
+        // Default BC paid detection
+        PurchInvHeader.Get(Rec."No.");
+        PurchInvHeader.CalcFields("Remaining Amount");
+
+        if PurchInvHeader."Remaining Amount" = 0 then begin
+            ChiizuStatus := ChiizuStatus::Paid;
+            exit;
+        end;
+
+        // Chiizu override
+        if ChiizuInvoiceStatus.Get(Rec."No.") then
+            ChiizuStatus := ChiizuInvoiceStatus.Status;
     end;
 }

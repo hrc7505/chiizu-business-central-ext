@@ -1,4 +1,3 @@
-
 page 50120 "Chiizu Schedule Payment"
 {
     PageType = Worksheet;
@@ -11,21 +10,21 @@ page 50120 "Chiizu Schedule Payment"
     {
         area(Content)
         {
-            group(Instructions)
+            group(Header)
             {
-                Caption = 'Instructions';
-                field(InfoText; InfoText)
-                {
-                    ApplicationArea = All;
-                    Editable = false;
-                    ToolTip = 'Review the invoices to be scheduled. Set a Scheduled Date for each line and choose Schedule All.';
-                }
+                Caption = '';
                 field(DefaultScheduledDate; DefaultScheduledDate)
                 {
                     ApplicationArea = All;
-                    Caption = 'Default Scheduled Date';
-                    ToolTip = 'Set a default scheduled date to apply to all lines.';
+                    Caption = 'Scheduled Date for All';
+                    ToolTip = 'This scheduled date will be applied to all invoices.';
+
+                    trigger OnValidate()
+                    begin
+                        ApplyScheduledDateToAllLines();
+                    end;
                 }
+
             }
 
             repeater(Invoices)
@@ -56,7 +55,8 @@ page 50120 "Chiizu Schedule Payment"
                 field("Scheduled Date"; Rec."Scheduled Date")
                 {
                     ApplicationArea = All;
-                    ToolTip = 'Date on which this invoice will be scheduled for payment.';
+                    Editable = false;
+                    ToolTip = 'Scheduled date applied to all invoices.';
                 }
                 field(Status; Rec.Status)
                 {
@@ -71,27 +71,6 @@ page 50120 "Chiizu Schedule Payment"
     {
         area(Processing)
         {
-            action(ApplyDefaultDate)
-            {
-                Caption = 'Apply Default Date to All';
-                Image = Calendar;
-                ApplicationArea = All;
-                Promoted = true;
-                PromotedCategory = Process;
-
-                trigger OnAction()
-                begin
-                    Rec.Reset();
-                    if Rec.FindSet() then
-                        repeat
-                            Rec."Scheduled Date" := DefaultScheduledDate;
-                            Rec.Modify();
-                        until Rec.Next() = 0;
-
-                    CurrPage.Update(false);
-                end;
-            }
-
             action(ScheduleAll)
             {
                 Caption = 'Schedule All';
@@ -106,7 +85,9 @@ page 50120 "Chiizu Schedule Payment"
                     PaymentService: Codeunit "Chiizu Payment Service";
                     Cnt: Integer;
                 begin
-                    // Validate using the page dataset directly
+                    if DefaultScheduledDate < Today then
+                        Error('Scheduled date must be today or later.');
+
                     Rec.Reset();
                     if Rec.IsEmpty() then
                         Error('No invoices to schedule.');
@@ -116,11 +97,11 @@ page 50120 "Chiizu Schedule Payment"
                             if Round(Abs(Rec.Amount), 0.01, '=') = 0 then
                                 Error('Invoice %1 has no remaining payable amount.', Rec."Invoice No.");
 
-                            if Rec."Scheduled Date" < Today then
-                                Error('Scheduled date for invoice %1 must be today or later.', Rec."Invoice No.");
+                            // enforce single date
+                            Rec."Scheduled Date" := DefaultScheduledDate;
+                            Rec.Modify();
                         until Rec.Next() = 0;
 
-                    // Single API call using the page's temporary dataset
                     Cnt := PaymentService.ScheduleInvoices(Rec);
 
                     Message('Successfully scheduled %1 invoice(s).', Cnt);
@@ -149,11 +130,11 @@ page 50120 "Chiizu Schedule Payment"
 
     trigger OnOpenPage()
     begin
-        InfoText := 'Set Scheduled Date for each invoice (or apply a default date) and choose Schedule All.';
+        InfoText := 'Select a single scheduled date. This date will be applied to all invoices.';
         if DefaultScheduledDate = 0D then
             DefaultScheduledDate := Today;
 
-        NextEntryNo := 1; // temp PK counter
+        NextEntryNo := 1;
     end;
 
     procedure SetSelectedInvoices(SelectedInvoiceNos: List of [Code[20]])
@@ -171,7 +152,7 @@ page 50120 "Chiizu Schedule Payment"
     begin
         Rec.Reset();
         Rec.DeleteAll();
-        NextEntryNo := 1; // reset temp PK counter each load
+        NextEntryNo := 1;
 
         ErrorText := '';
         HasErrors := false;
@@ -182,7 +163,6 @@ page 50120 "Chiizu Schedule Payment"
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
-            // First try: Open invoice VLE with non-zero remaining
             VendLedgEntry.Reset();
             VendLedgEntry.SetRange("Document Type", VendLedgEntry."Document Type"::Invoice);
             VendLedgEntry.SetRange("Document No.", InvNo);
@@ -201,38 +181,20 @@ page 50120 "Chiizu Schedule Payment"
                     end;
                 until VendLedgEntry.Next() = 0;
 
-            // Fallback: any VLE with non-zero remaining (choose max)
-            if not FoundPayable then begin
-                VendLedgEntry.Reset();
-                VendLedgEntry.SetRange("Document Type", VendLedgEntry."Document Type"::Invoice);
-                VendLedgEntry.SetRange("Document No.", InvNo);
-                if VendLedgEntry.FindSet() then
-                    repeat
-                        VendLedgEntry.CalcFields("Remaining Amount");
-                        if Round(Abs(VendLedgEntry."Remaining Amount"), 0.01, '=') > 0 then
-                            if Abs(VendLedgEntry."Remaining Amount") > BestRemaining then begin
-                                BestRemaining := Abs(VendLedgEntry."Remaining Amount");
-                                PayableVLE := VendLedgEntry;
-                                FoundPayable := true;
-                            end;
-                    until VendLedgEntry.Next() = 0;
-            end;
-
             if not FoundPayable then begin
                 ErrorText += StrSubstNo('• No payable vendor ledger entry found for invoice %1.\n', InvNo);
                 HasErrors := true;
                 continue;
             end;
 
-            // Disallow scheduling if already paid via Chiizu
+            // enum-based status validation (no removed fields)
             if Status.Get(InvNo) then
-                if Status."Paid via Chiizu" then begin
-                    ErrorText += StrSubstNo('• Invoice %1 is already paid via Chiizu.\n', InvNo);
+                if Status.Status = Status.Status::Paid then begin
+                    ErrorText += StrSubstNo('• Invoice %1 is already paid.\n', InvNo);
                     HasErrors := true;
                     continue;
                 end;
 
-            // Insert temporary worksheet line (assign Entry No. manually)
             Rec.Init();
             Rec."Entry No." := NextEntryNo;
             NextEntryNo += 1;
@@ -241,7 +203,7 @@ page 50120 "Chiizu Schedule Payment"
             Rec."Vendor No." := PayableVLE."Vendor No.";
             PayableVLE.CalcFields("Remaining Amount");
             Rec.Amount := Abs(PayableVLE."Remaining Amount");
-            Rec."Scheduled Date" := Today;
+            Rec."Scheduled Date" := DefaultScheduledDate;
             Rec.Status := Rec.Status::Open;
             Rec.Insert();
         end;
@@ -252,4 +214,17 @@ page 50120 "Chiizu Schedule Payment"
         if HasErrors and (ErrorText <> '') then
             Message(ErrorText);
     end;
+
+    local procedure ApplyScheduledDateToAllLines()
+    begin
+        Rec.Reset();
+        if Rec.FindSet() then
+            repeat
+                Rec."Scheduled Date" := DefaultScheduledDate;
+                Rec.Modify();
+            until Rec.Next() = 0;
+
+        CurrPage.Update(false);
+    end;
+
 }
