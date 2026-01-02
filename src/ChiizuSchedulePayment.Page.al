@@ -1,3 +1,4 @@
+
 page 50120 "Chiizu Schedule Payment"
 {
     PageType = Worksheet;
@@ -17,7 +18,7 @@ page 50120 "Chiizu Schedule Payment"
                 {
                     ApplicationArea = All;
                     Caption = 'Scheduled Date for All';
-                    ToolTip = 'This scheduled date will be applied to all invoices.';
+                    ToolTip = 'This scheduled date will be applied to all invoices in the list.';
 
                     trigger OnValidate()
                     begin
@@ -31,10 +32,10 @@ page 50120 "Chiizu Schedule Payment"
                 ShowCaption = true;
 
                 field("Entry No."; Rec."Entry No.") { ApplicationArea = All; Editable = false; Visible = false; }
-                field("Invoice No."; Rec."Invoice No.") { ApplicationArea = All; Editable = false; }
-                field("Vendor No."; Rec."Vendor No.") { ApplicationArea = All; Editable = false; }
-                field(Amount; Rec.Amount) { ApplicationArea = All; Editable = false; }
-                field(Status; Rec.Status) { ApplicationArea = All; Editable = false; }
+                field("Invoice No."; Rec."Invoice No.") { ApplicationArea = All; Editable = false; ToolTip = 'The posted purchase invoice number.'; }
+                field("Vendor No."; Rec."Vendor No.") { ApplicationArea = All; Editable = false; ToolTip = 'The vendor related to this invoice.'; }
+                field(Amount; Rec.Amount) { ApplicationArea = All; Editable = false; ToolTip = 'Outstanding amount to be scheduled for payment.'; }
+                field(Status; Rec.Status) { ApplicationArea = All; Editable = false; ToolTip = 'Chiizu payment status computed same as on Posted Purchase Invoices.'; }
             }
         }
     }
@@ -51,6 +52,7 @@ page 50120 "Chiizu Schedule Payment"
                 Promoted = true;
                 PromotedCategory = Process;
                 PromotedIsBig = true;
+                ToolTip = 'Schedule all listed invoices for payment on the selected date.';
 
                 trigger OnAction()
                 var
@@ -64,16 +66,50 @@ page 50120 "Chiizu Schedule Payment"
                     if Rec.IsEmpty() then
                         Error('No invoices to schedule.');
 
+                    // Ensure every line has the top date before scheduling
                     if Rec.FindSet() then
                         repeat
-                            // Use top date for all rows
                             Rec."Scheduled Date" := DefaultScheduledDate;
                             Rec.Modify(true);
                         until Rec.Next() = 0;
 
+                    // Optional: recompute statuses in case something changed, and block Paid
+                    Rec.Reset();
+                    if Rec.FindSet() then
+                        repeat
+                            Rec.Status := GetChiizuStatus(Rec."Invoice No.");
+                            Rec.Modify(true);
+                        until Rec.Next() = 0;
+
+                    Rec.Reset();
+                    Rec.SetRange(Status, Rec.Status::Paid);
+                    if not Rec.IsEmpty() then
+                        Error('One or more invoices are already paid and cannot be scheduled. Refresh statuses and adjust selection.');
+
+                    // Proceed with scheduling
                     Cnt := PaymentService.ScheduleInvoices(Rec);
                     Message('Successfully scheduled %1 invoice(s).', Cnt);
                     CurrPage.Close();
+                end;
+            }
+
+            action(RefreshStatuses)
+            {
+                Caption = 'Refresh Statuses';
+                Image = Refresh;
+                ApplicationArea = All;
+                ToolTip = 'Recompute the Chiizu status for all listed invoices.';
+
+                trigger OnAction()
+                begin
+                    Rec.Reset();
+                    if Rec.FindSet() then
+                        repeat
+                            Rec.Status := GetChiizuStatus(Rec."Invoice No.");
+                            Rec.Modify(true);
+                        until Rec.Next() = 0;
+
+                    CurrPage.Update(false);
                 end;
             }
 
@@ -82,7 +118,7 @@ page 50120 "Chiizu Schedule Payment"
                 Caption = 'Cancel';
                 Image = Cancel;
                 ApplicationArea = All;
-
+                ToolTip = 'Close without scheduling.';
                 trigger OnAction()
                 begin
                     CurrPage.Close();
@@ -127,6 +163,7 @@ page 50120 "Chiizu Schedule Payment"
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
+            // Validate there's an open payable VLE with remaining amount > 0
             VendLedgEntry.Reset();
             VendLedgEntry.SetRange("Document Type", VendLedgEntry."Document Type"::Invoice);
             VendLedgEntry.SetRange("Document No.", InvNo);
@@ -150,6 +187,7 @@ page 50120 "Chiizu Schedule Payment"
                 continue;
             end;
 
+            // If Chiizu status record explicitly marks Paid, skip
             if Status.Get(InvNo) then
                 if Status.Status = Status.Status::Paid then begin
                     ErrorText += StrSubstNo('• Invoice %1 is already paid.\n', InvNo);
@@ -157,16 +195,20 @@ page 50120 "Chiizu Schedule Payment"
                     continue;
                 end;
 
+            // Create temp schedule row
             Rec.Init();
             Rec."Entry No." := NextEntryNo;
             NextEntryNo += 1;
+
             Rec."Invoice No." := PayableVLE."Document No.";
             Rec."Vendor No." := PayableVLE."Vendor No.";
             Rec.Amount := Abs(PayableVLE."Remaining Amount");
 
-            // Use top Scheduled Date
+            // Compute the same status logic as on the Posted Purchase Invoices page
+            Rec.Status := GetChiizuStatus(Rec."Invoice No.");
+
+            // Use top Scheduled Date (can be edited via header field)
             Rec."Scheduled Date" := DefaultScheduledDate;
-            Rec.Status := Rec.Status::Open;
 
             Rec.Insert(true);
         end;
@@ -191,5 +233,28 @@ page 50120 "Chiizu Schedule Payment"
             until Rec.Next() = 0;
 
         CurrPage.Update(false);
+    end;
+
+    local procedure GetChiizuStatus(InvNo: Code[20]): Enum "Chiizu Payment Status"
+    var
+        PurchInvHeader: Record "Purch. Inv. Header";
+        ChiizuInvoiceStatus: Record "Chiizu Invoice Status";
+        StatusEnum: Enum "Chiizu Payment Status";
+    begin
+        // Default to Open
+        StatusEnum := StatusEnum::Open;
+
+        // BC paid detection (Remaining Amount = 0 => Paid)
+        if PurchInvHeader.Get(InvNo) then begin
+            PurchInvHeader.CalcFields("Remaining Amount");
+            if PurchInvHeader."Remaining Amount" = 0 then
+                exit(StatusEnum::Paid); // BC paid wins
+        end;
+
+        // Chiizu override (if present)
+        if ChiizuInvoiceStatus.Get(InvNo) then
+            exit(ChiizuInvoiceStatus.Status);
+
+        exit(StatusEnum);
     end;
 }

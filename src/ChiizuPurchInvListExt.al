@@ -1,4 +1,3 @@
-
 pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoices"
 {
     Caption = 'Chiizu | Posted Purchase Invoices';
@@ -11,6 +10,7 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
             {
                 ApplicationArea = All;
                 Caption = 'Status';
+                ToolTip = 'Shows the Chiizu payment status for this posted purchase invoice.';
             }
         }
     }
@@ -30,6 +30,7 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                 Promoted = true;
                 PromotedCategory = Process;
                 PromotedIsBig = true;
+                ToolTip = 'Send the selected posted purchase invoices to Chiizu for immediate payment.';
 
                 trigger OnAction()
                 var
@@ -47,8 +48,9 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                             SelectedInvoiceNos.Add(PurchHeader."No.");
                         until PurchHeader.Next() = 0;
 
+                    // Execute and report count
                     PaymentService.PayInvoices(SelectedInvoiceNos);
-                    Message('Selected invoice(s) were successfully paid via Chiizu.');
+                    Message('%1 invoice(s) were successfully paid via Chiizu.', SelectedInvoiceNos.Count());
                 end;
             }
 
@@ -62,6 +64,7 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                 ApplicationArea = All;
                 Promoted = true;
                 PromotedCategory = Process;
+                ToolTip = 'Schedule payment for the selected posted purchase invoices via Chiizu.';
 
                 trigger OnAction()
                 var
@@ -92,20 +95,18 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
     trigger OnAfterGetRecord()
     var
         ChiizuInvoiceStatus: Record "Chiizu Invoice Status";
-        PurchInvHeader: Record "Purch. Inv. Header";
     begin
+        // Default to Open
         ChiizuStatus := ChiizuStatus::Open;
 
-        // Default BC paid detection
-        PurchInvHeader.Get(Rec."No.");
-        PurchInvHeader.CalcFields("Remaining Amount");
-
-        if PurchInvHeader."Remaining Amount" = 0 then begin
+        // Default BC paid detection (Remaining Amount = 0 => Paid)
+        Rec.CalcFields("Remaining Amount");
+        if Rec."Remaining Amount" = 0 then begin
             ChiizuStatus := ChiizuStatus::Paid;
-            exit;
+            exit; // BC paid wins
         end;
 
-        // Chiizu override
+        // Chiizu override (if present)
         if ChiizuInvoiceStatus.Get(Rec."No.") then
             ChiizuStatus := ChiizuInvoiceStatus.Status;
     end;
