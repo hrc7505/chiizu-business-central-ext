@@ -24,45 +24,17 @@ page 50120 "Chiizu Schedule Payment"
                         ApplyScheduledDateToAllLines();
                     end;
                 }
-
             }
 
             repeater(Invoices)
             {
                 ShowCaption = true;
 
-                field("Entry No."; Rec."Entry No.")
-                {
-                    ApplicationArea = All;
-                    Editable = false;
-                }
-                field("Invoice No."; Rec."Invoice No.")
-                {
-                    ApplicationArea = All;
-                    Editable = false;
-                }
-                field("Vendor No."; Rec."Vendor No.")
-                {
-                    ApplicationArea = All;
-                    Editable = false;
-                }
-                field(Amount; Rec.Amount)
-                {
-                    ApplicationArea = All;
-                    Editable = false;
-                    ToolTip = 'Remaining amount to be scheduled (document currency).';
-                }
-                field("Scheduled Date"; Rec."Scheduled Date")
-                {
-                    ApplicationArea = All;
-                    Editable = false;
-                    ToolTip = 'Scheduled date applied to all invoices.';
-                }
-                field(Status; Rec.Status)
-                {
-                    ApplicationArea = All;
-                    Editable = false;
-                }
+                field("Entry No."; Rec."Entry No.") { ApplicationArea = All; Editable = false; Visible = false; }
+                field("Invoice No."; Rec."Invoice No.") { ApplicationArea = All; Editable = false; }
+                field("Vendor No."; Rec."Vendor No.") { ApplicationArea = All; Editable = false; }
+                field(Amount; Rec.Amount) { ApplicationArea = All; Editable = false; }
+                field(Status; Rec.Status) { ApplicationArea = All; Editable = false; }
             }
         }
     }
@@ -94,16 +66,12 @@ page 50120 "Chiizu Schedule Payment"
 
                     if Rec.FindSet() then
                         repeat
-                            if Round(Abs(Rec.Amount), 0.01, '=') = 0 then
-                                Error('Invoice %1 has no remaining payable amount.', Rec."Invoice No.");
-
-                            // enforce single date
+                            // Use top date for all rows
                             Rec."Scheduled Date" := DefaultScheduledDate;
-                            Rec.Modify();
+                            Rec.Modify(true);
                         until Rec.Next() = 0;
 
                     Cnt := PaymentService.ScheduleInvoices(Rec);
-
                     Message('Successfully scheduled %1 invoice(s).', Cnt);
                     CurrPage.Close();
                 end;
@@ -124,13 +92,12 @@ page 50120 "Chiizu Schedule Payment"
     }
 
     var
-        InfoText: Text;
         DefaultScheduledDate: Date;
         NextEntryNo: Integer;
 
+    // Initialize default date
     trigger OnOpenPage()
     begin
-        InfoText := 'Select a single scheduled date. This date will be applied to all invoices.';
         if DefaultScheduledDate = 0D then
             DefaultScheduledDate := Today;
 
@@ -145,15 +112,12 @@ page 50120 "Chiizu Schedule Payment"
         HasErrors: Boolean;
         InvNo: Code[20];
         i: Integer;
-
         PayableVLE: Record "Vendor Ledger Entry";
-        BestRemaining: Decimal;
         FoundPayable: Boolean;
     begin
         Rec.Reset();
         Rec.DeleteAll();
         NextEntryNo := 1;
-
         ErrorText := '';
         HasErrors := false;
 
@@ -169,14 +133,13 @@ page 50120 "Chiizu Schedule Payment"
             VendLedgEntry.SetRange(Open, true);
 
             FoundPayable := false;
-            BestRemaining := 0;
 
             if VendLedgEntry.FindSet() then
                 repeat
                     VendLedgEntry.CalcFields("Remaining Amount");
                     if Round(Abs(VendLedgEntry."Remaining Amount"), 0.01, '=') > 0 then begin
-                        FoundPayable := true;
                         PayableVLE := VendLedgEntry;
+                        FoundPayable := true;
                         break;
                     end;
                 until VendLedgEntry.Next() = 0;
@@ -187,7 +150,6 @@ page 50120 "Chiizu Schedule Payment"
                 continue;
             end;
 
-            // enum-based status validation (no removed fields)
             if Status.Get(InvNo) then
                 if Status.Status = Status.Status::Paid then begin
                     ErrorText += StrSubstNo('• Invoice %1 is already paid.\n', InvNo);
@@ -198,14 +160,15 @@ page 50120 "Chiizu Schedule Payment"
             Rec.Init();
             Rec."Entry No." := NextEntryNo;
             NextEntryNo += 1;
-
             Rec."Invoice No." := PayableVLE."Document No.";
             Rec."Vendor No." := PayableVLE."Vendor No.";
-            PayableVLE.CalcFields("Remaining Amount");
             Rec.Amount := Abs(PayableVLE."Remaining Amount");
+
+            // Use top Scheduled Date
             Rec."Scheduled Date" := DefaultScheduledDate;
             Rec.Status := Rec.Status::Open;
-            Rec.Insert();
+
+            Rec.Insert(true);
         end;
 
         if Rec.IsEmpty() then
@@ -213,6 +176,9 @@ page 50120 "Chiizu Schedule Payment"
 
         if HasErrors and (ErrorText <> '') then
             Message(ErrorText);
+
+        // Refresh page to show inserted rows
+        CurrPage.Update(false);
     end;
 
     local procedure ApplyScheduledDateToAllLines()
@@ -221,10 +187,9 @@ page 50120 "Chiizu Schedule Payment"
         if Rec.FindSet() then
             repeat
                 Rec."Scheduled Date" := DefaultScheduledDate;
-                Rec.Modify();
+                Rec.Modify(true);
             until Rec.Next() = 0;
 
         CurrPage.Update(false);
     end;
-
 }
