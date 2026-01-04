@@ -57,10 +57,7 @@ codeunit 50104 "Chiizu Payment Service"
         Payload.Add('batchId', CreateBatchId());
         Payload.Add('invoices', Invoices);
 
-        // 🔗 API call (returns raw response text)
         ResponseText := CallBulkAPI(Setup, Payload, Setup."API Base URL");
-
-        // ✅ Status is updated ONLY based on API response
         ApplyApiResult(ResponseText);
     end;
 
@@ -74,7 +71,6 @@ codeunit 50104 "Chiizu Payment Service"
         Schedules: JsonArray;
         Obj: JsonObject;
         ResponseText: Text;
-        CountScheduled: Integer;
     begin
         TempSchedule.Reset();
         if TempSchedule.IsEmpty() then
@@ -103,11 +99,56 @@ codeunit 50104 "Chiizu Payment Service"
         Payload.Add('isScheduled', true);
 
         ResponseText := CallBulkAPI(Setup, Payload, Setup."API Base URL");
-
         ApplyApiResult(ResponseText);
 
-        CountScheduled := Schedules.Count();
-        exit(CountScheduled);
+        exit(Schedules.Count());
+    end;
+
+    // --------------------------
+    // BULK CANCEL SCHEDULED PAYMENTS  ✅ NEW
+    // --------------------------
+    procedure CancelScheduledInvoices(SelectedInvoiceNos: List of [Code[20]])
+    var
+        Setup: Record "Chiizu Setup";
+        InvoiceStatus: Record "Chiizu Invoice Status";
+
+        Payload: JsonObject;
+        Invoices: JsonArray;
+        Obj: JsonObject;
+
+        ResponseText: Text;
+        InvNo: Code[20];
+        i: Integer;
+    begin
+        if SelectedInvoiceNos.Count() = 0 then
+            Error('No invoices were provided.');
+
+        GetOrCreateSetup(Setup);
+        Clear(Payload);
+        Clear(Invoices);
+
+        for i := 1 to SelectedInvoiceNos.Count() do begin
+            InvNo := SelectedInvoiceNos.Get(i);
+
+            if not InvoiceStatus.Get(InvNo) then
+                Error('Invoice %1 is not scheduled.', InvNo);
+
+            if InvoiceStatus.Status <> InvoiceStatus.Status::Scheduled then
+                Error('Invoice %1 is not in Scheduled status.', InvNo);
+
+            Clear(Obj);
+            Obj.Add('invoiceNo', InvNo);
+            Obj.Add('action', 'CANCEL');
+
+            Invoices.Add(Obj);
+        end;
+
+        Payload.Add('batchId', CreateBatchId());
+        Payload.Add('invoices', Invoices);
+        Payload.Add('isCancel', true);
+
+        ResponseText := CallBulkAPI(Setup, Payload, Setup."API Base URL");
+        ApplyApiResult(ResponseText);
     end;
 
     // --------------------------
@@ -140,27 +181,19 @@ codeunit 50104 "Chiizu Payment Service"
         for i := 0 to Results.Count() - 1 do begin
             Results.Get(i, ItemToken);
 
-            // invoiceNo
-            if not ItemToken.AsObject().Get('invoiceNo', FieldToken) then
-                Error('API result missing invoiceNo.');
-
+            ItemToken.AsObject().Get('invoiceNo', FieldToken);
             InvoiceNo := FieldToken.AsValue().AsCode();
 
-            // status
-            if not ItemToken.AsObject().Get('status', FieldToken) then
-                Error('API result missing status.');
-
+            ItemToken.AsObject().Get('status', FieldToken);
             ApiStatus := UpperCase(FieldToken.AsValue().AsText());
             EnumStatus := MapApiStatus(ApiStatus);
 
-            // scheduledDate (OPTIONAL but expected for SCHEDULED)
             Clear(ScheduledDate);
             if ItemToken.AsObject().Get('scheduledDate', FieldToken) then begin
                 ScheduledDateTxt := FieldToken.AsValue().AsText();
                 Evaluate(ScheduledDate, ScheduledDateTxt);
             end;
 
-            // 🔹 Persist
             if not InvoiceStatus.Get(InvoiceNo) then begin
                 InvoiceStatus.Init();
                 InvoiceStatus."Invoice No." := InvoiceNo;

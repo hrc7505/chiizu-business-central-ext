@@ -37,7 +37,6 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                 Promoted = true;
                 PromotedCategory = Process;
                 PromotedIsBig = true;
-                ToolTip = 'Send the selected posted purchase invoices to Chiizu for immediate payment.';
 
                 trigger OnAction()
                 var
@@ -55,14 +54,13 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                             SelectedInvoiceNos.Add(PurchHeader."No.");
                         until PurchHeader.Next() = 0;
 
-                    // Execute and report count
                     PaymentService.PayInvoices(SelectedInvoiceNos);
                     Message('%1 invoice(s) were successfully paid via Chiizu.', SelectedInvoiceNos.Count());
                 end;
             }
 
             // --------------------------
-            // Schedule Payment (Bulk single API call)
+            // Schedule Payment (Bulk)
             // --------------------------
             action(ScheduleChiizuPayment)
             {
@@ -71,7 +69,6 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                 ApplicationArea = All;
                 Promoted = true;
                 PromotedCategory = Process;
-                ToolTip = 'Schedule payment for the selected posted purchase invoices via Chiizu.';
 
                 trigger OnAction()
                 var
@@ -93,35 +90,106 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                     SchedulePage.RunModal();
                 end;
             }
+
+            // --------------------------
+            // CANCEL SCHEDULED PAYMENT (BULK SAFE)
+            // --------------------------
+            action(CancelChiizuSchedule)
+            {
+                Caption = 'Cancel Scheduled Payment';
+                Image = Cancel;
+                ApplicationArea = All;
+                Promoted = true;
+                PromotedCategory = Process;
+
+                Enabled = IsAnyScheduled;
+
+                trigger OnAction()
+                var
+                    PaymentService: Codeunit "Chiizu Payment Service";
+                    SelPurchInv: Record "Purch. Inv. Header";
+                    SelectedInvoiceNos: List of [Code[20]];
+                begin
+                    CurrPage.SetSelectionFilter(SelPurchInv);
+
+                    if SelPurchInv.IsEmpty() then
+                        Error('No invoices selected.');
+
+                    if SelPurchInv.FindSet() then
+                        repeat
+                            SelectedInvoiceNos.Add(SelPurchInv."No.");
+                        until SelPurchInv.Next() = 0;
+
+                    if not Confirm(
+                        'Do you want to cancel scheduled payment for selected invoice(s)?',
+                        false
+                    ) then
+                        exit;
+
+                    PaymentService.CancelScheduledInvoices(SelectedInvoiceNos);
+
+                    CurrPage.Update(false);
+                end;
+            }
+
         }
     }
 
+    // ==========================
+    // VARIABLES
+    // ==========================
     var
         ChiizuStatus: Enum "Chiizu Payment Status";
         ChiizuScheduledDate: Date;
+        IsAnyScheduled: Boolean;
 
+    // ==========================
+    // PER-ROW DISPLAY LOGIC
+    // ==========================
     trigger OnAfterGetRecord()
     var
         ChiizuInvoiceStatus: Record "Chiizu Invoice Status";
     begin
-        // Default values
         ChiizuStatus := ChiizuStatus::Open;
         ChiizuScheduledDate := 0D;
 
-        // BC paid detection (Remaining Amount = 0 => Paid)
+        // BC paid wins
         Rec.CalcFields("Remaining Amount");
         if Rec."Remaining Amount" = 0 then begin
             ChiizuStatus := ChiizuStatus::Paid;
-            exit; // BC paid wins; Scheduled Date is irrelevant once fully paid
+            exit;
         end;
 
-        // Chiizu override (status + scheduled date if present)
+        // Chiizu status + scheduled date
         if ChiizuInvoiceStatus.Get(Rec."No.") then begin
             ChiizuStatus := ChiizuInvoiceStatus.Status;
-
-            // Assuming your status table contains the scheduled date column
-            // Replace "Scheduled Date" with your actual field name if different
             ChiizuScheduledDate := ChiizuInvoiceStatus."Scheduled Date";
         end;
+    end;
+
+    // ==========================
+    // SELECTION-BASED ENABLEMENT
+    // ==========================
+    trigger OnAfterGetCurrRecord()
+    begin
+        UpdateSelectionState();
+    end;
+
+    local procedure UpdateSelectionState()
+    var
+        SelInv: Record "Purch. Inv. Header";
+        Stat: Record "Chiizu Invoice Status";
+    begin
+        IsAnyScheduled := false;
+
+        CurrPage.SetSelectionFilter(SelInv);
+        if SelInv.FindSet() then
+            repeat
+                if Stat.Get(SelInv."No.") then
+                    if Stat.Status = Stat.Status::Scheduled then begin
+                        IsAnyScheduled := true;
+                        exit;
+                    end;
+            until SelInv.Next() = 0;
     end;
 }
