@@ -119,6 +119,9 @@ codeunit 50104 "Chiizu Payment Service"
         ResponseText: Text;
         InvNo: Code[20];
         i: Integer;
+
+        InvalidInvoices: Text;
+        HasInvalid: Boolean;
     begin
         if SelectedInvoiceNos.Count() = 0 then
             Error('No invoices were provided.');
@@ -127,14 +130,43 @@ codeunit 50104 "Chiizu Payment Service"
         Clear(Payload);
         Clear(Invoices);
 
+        HasInvalid := false;
+        InvalidInvoices := '';
+
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
-            if not InvoiceStatus.Get(InvNo) then
-                Error('Invoice %1 is not scheduled.', InvNo);
+            if not InvoiceStatus.Get(InvNo) then begin
+                HasInvalid := true;
+                InvalidInvoices +=
+                    StrSubstNo('• %1 (no Chiizu record)', InvNo) + '\';
+                continue;
+            end;
 
-            if InvoiceStatus.Status <> InvoiceStatus.Status::Scheduled then
-                Error('Invoice %1 is not in Scheduled status.', InvNo);
+            if InvoiceStatus.Status <> InvoiceStatus.Status::Scheduled then begin
+                HasInvalid := true;
+                InvalidInvoices +=
+                    StrSubstNo(
+                        '• %1 (status = %2)',
+                        InvNo,
+                        InvoiceStatus.Status
+                    ) + '\';
+            end;
+        end;
+
+        if HasInvalid then
+            Error(
+                'Cancel Scheduled Payment failed.' +
+                '\' +
+                'The following invoices are not in Scheduled status:' +
+                '\' +
+                InvalidInvoices
+            );
+
+
+        // ✅ BUILD PAYLOAD (ALL VALID)
+        for i := 1 to SelectedInvoiceNos.Count() do begin
+            InvNo := SelectedInvoiceNos.Get(i);
 
             Clear(Obj);
             Obj.Add('invoiceNo', InvNo);
@@ -150,6 +182,7 @@ codeunit 50104 "Chiizu Payment Service"
         ResponseText := CallBulkAPI(Setup, Payload, Setup."API Base URL");
         ApplyApiResult(ResponseText);
     end;
+
 
     // --------------------------
     // APPLY API RESULT → STATUS

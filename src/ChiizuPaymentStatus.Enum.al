@@ -31,4 +31,9 @@ enum 50111 "Chiizu Payment Status"
     {
         Caption = 'Failed';
     }
+
+    value(6; "Partially Paid")
+    {
+        Caption = 'Partially Paid';
+    }
 }

@@ -69,12 +69,15 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                 ApplicationArea = All;
                 Promoted = true;
                 PromotedCategory = Process;
+                ToolTip = 'Schedule payment for the selected posted purchase invoices via Chiizu.';
 
                 trigger OnAction()
                 var
                     PurchHeader: Record "Purch. Inv. Header";
                     SelectedInvoiceNos: List of [Code[20]];
                     SchedulePage: Page "Chiizu Schedule Payment";
+                    InvoiceStatus: Record "Chiizu Invoice Status";
+                    Status: Enum "Chiizu Payment Status";
                 begin
                     CurrPage.SetSelectionFilter(PurchHeader);
 
@@ -83,6 +86,21 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
 
                     if PurchHeader.FindSet() then
                         repeat
+                            // 🔹 Default when no Chiizu record exists
+                            Status := Status::Open;
+
+                            if InvoiceStatus.Get(PurchHeader."No.") then
+                                Status := InvoiceStatus.Status;
+
+                            // 🔴 VALIDATION USING ENUM
+                            if not (Status in [Status::Open, Status::"Partially Paid", Status::Failed]) then
+                                Error(
+                                    'Invoice %1 cannot be scheduled because its status is %2. ' +
+                                    'Only Open, Partially Paid, or Failed invoices can be scheduled.',
+                                    PurchHeader."No.",
+                                    Status
+                                );
+
                             SelectedInvoiceNos.Add(PurchHeader."No.");
                         until PurchHeader.Next() = 0;
 
@@ -90,6 +108,7 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                     SchedulePage.RunModal();
                 end;
             }
+
 
             // --------------------------
             // CANCEL SCHEDULED PAYMENT (BULK SAFE)
