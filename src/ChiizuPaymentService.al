@@ -122,6 +122,7 @@ codeunit 50104 "Chiizu Payment Service"
 
         InvalidInvoices: Text;
         HasInvalid: Boolean;
+        EffectiveStatus: Enum "Chiizu Payment Status";
     begin
         if SelectedInvoiceNos.Count() = 0 then
             Error('No invoices were provided.');
@@ -133,23 +134,23 @@ codeunit 50104 "Chiizu Payment Service"
         HasInvalid := false;
         InvalidInvoices := '';
 
+        // 🔍 VALIDATION PASS
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
-            if not InvoiceStatus.Get(InvNo) then begin
-                HasInvalid := true;
-                InvalidInvoices +=
-                    StrSubstNo('• %1 (no Chiizu record)', InvNo) + '\';
-                continue;
-            end;
+            // Default effective status
+            EffectiveStatus := EffectiveStatus::Open;
 
-            if InvoiceStatus.Status <> InvoiceStatus.Status::Scheduled then begin
+            if InvoiceStatus.Get(InvNo) then
+                EffectiveStatus := InvoiceStatus.Status;
+
+            if EffectiveStatus <> EffectiveStatus::Scheduled then begin
                 HasInvalid := true;
                 InvalidInvoices +=
                     StrSubstNo(
                         '• %1 (status = %2)',
                         InvNo,
-                        InvoiceStatus.Status
+                        EffectiveStatus
                     ) + '\';
             end;
         end;
@@ -163,8 +164,7 @@ codeunit 50104 "Chiizu Payment Service"
                 InvalidInvoices
             );
 
-
-        // ✅ BUILD PAYLOAD (ALL VALID)
+        // ✅ BUILD PAYLOAD
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
@@ -182,7 +182,6 @@ codeunit 50104 "Chiizu Payment Service"
         ResponseText := CallBulkAPI(Setup, Payload, Setup."API Base URL");
         ApplyApiResult(ResponseText);
     end;
-
 
     // --------------------------
     // APPLY API RESULT → STATUS
