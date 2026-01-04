@@ -28,6 +28,11 @@ table 50110 "Chiizu Invoice Status"
         {
             DataClassification = SystemMetadata;
         }
+
+        field(6; "Scheduled Date"; Date)
+        {
+            DataClassification = CustomerContent;
+        }
     }
 
     keys

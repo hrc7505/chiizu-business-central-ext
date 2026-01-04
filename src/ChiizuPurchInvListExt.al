@@ -12,6 +12,13 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                 Caption = 'Status';
                 ToolTip = 'Shows the Chiizu payment status for this posted purchase invoice.';
             }
+
+            field(ChiizuScheduledDate; ChiizuScheduledDate)
+            {
+                ApplicationArea = All;
+                Caption = 'Scheduled Date';
+                ToolTip = 'If this invoice is scheduled for payment via Chiizu, this shows the scheduled payment date.';
+            }
         }
     }
 
@@ -91,23 +98,30 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
 
     var
         ChiizuStatus: Enum "Chiizu Payment Status";
+        ChiizuScheduledDate: Date;
 
     trigger OnAfterGetRecord()
     var
         ChiizuInvoiceStatus: Record "Chiizu Invoice Status";
     begin
-        // Default to Open
+        // Default values
         ChiizuStatus := ChiizuStatus::Open;
+        ChiizuScheduledDate := 0D;
 
-        // Default BC paid detection (Remaining Amount = 0 => Paid)
+        // BC paid detection (Remaining Amount = 0 => Paid)
         Rec.CalcFields("Remaining Amount");
         if Rec."Remaining Amount" = 0 then begin
             ChiizuStatus := ChiizuStatus::Paid;
-            exit; // BC paid wins
+            exit; // BC paid wins; Scheduled Date is irrelevant once fully paid
         end;
 
-        // Chiizu override (if present)
-        if ChiizuInvoiceStatus.Get(Rec."No.") then
+        // Chiizu override (status + scheduled date if present)
+        if ChiizuInvoiceStatus.Get(Rec."No.") then begin
             ChiizuStatus := ChiizuInvoiceStatus.Status;
+
+            // Assuming your status table contains the scheduled date column
+            // Replace "Scheduled Date" with your actual field name if different
+            ChiizuScheduledDate := ChiizuInvoiceStatus."Scheduled Date";
+        end;
     end;
 }

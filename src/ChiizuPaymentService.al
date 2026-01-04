@@ -122,6 +122,8 @@ codeunit 50104 "Chiizu Payment Service"
 
         InvoiceNo: Code[20];
         ApiStatus: Text;
+        ScheduledDateTxt: Text;
+        ScheduledDate: Date;
 
         InvoiceStatus: Record "Chiizu Invoice Status";
         EnumStatus: Enum "Chiizu Payment Status";
@@ -131,7 +133,7 @@ codeunit 50104 "Chiizu Payment Service"
             Error('Invalid API response.');
 
         if not Root.Get('invoices', FieldToken) then
-            Error('API response missing results.');
+            Error('API response missing invoices.');
 
         Results := FieldToken.AsArray();
 
@@ -149,21 +151,29 @@ codeunit 50104 "Chiizu Payment Service"
                 Error('API result missing status.');
 
             ApiStatus := UpperCase(FieldToken.AsValue().AsText());
-
             EnumStatus := MapApiStatus(ApiStatus);
 
+            // scheduledDate (OPTIONAL but expected for SCHEDULED)
+            Clear(ScheduledDate);
+            if ItemToken.AsObject().Get('scheduledDate', FieldToken) then begin
+                ScheduledDateTxt := FieldToken.AsValue().AsText();
+                Evaluate(ScheduledDate, ScheduledDateTxt);
+            end;
+
+            // 🔹 Persist
             if not InvoiceStatus.Get(InvoiceNo) then begin
                 InvoiceStatus.Init();
                 InvoiceStatus."Invoice No." := InvoiceNo;
                 InvoiceStatus.Status := EnumStatus;
+                InvoiceStatus."Scheduled Date" := ScheduledDate;
                 InvoiceStatus.Insert(true);
             end else begin
                 InvoiceStatus.Status := EnumStatus;
+                InvoiceStatus."Scheduled Date" := ScheduledDate;
                 InvoiceStatus.Modify(true);
             end;
         end;
     end;
-
 
     // --------------------------
     // API → ENUM MAPPING
