@@ -247,7 +247,7 @@ codeunit 50104 "Chiizu Payment Service"
     begin
         case ApiStatus of
             'PAID':
-                exit("Chiizu Payment Status"::Paid);
+                exit("Chiizu Payment Status"::ExternalPaid);
             'PROCESSING':
                 exit("Chiizu Payment Status"::Processing);
             'SCHEDULED':
