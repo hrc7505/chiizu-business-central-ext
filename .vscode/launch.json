@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "BC Sandbox",
+      "type": "al",
+      "request": "launch",
+      "environmentType": "Sandbox",
+      "environmentName": "Sandbox", // 👈 Must match your sandbox name exactly
+      "authentication": "AAD",
+      "tenant": "wecreateapp.onmicrosoft.com",
+      "breakOnError": true,
+      "launchBrowser": true,
+      "schemaUpdateMode": "Synchronize"
+    }
+  ]
+}
