@@ -10,7 +10,8 @@
       "authentication": "AAD",
       "tenant": "wecreateapp.onmicrosoft.com",
       "breakOnError": true,
-      "launchBrowser": true
+      "launchBrowser": true,
+      "schemaUpdateMode": "Synchronize"
     }
   ]
 }

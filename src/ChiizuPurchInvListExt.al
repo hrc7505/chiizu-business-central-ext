@@ -131,23 +131,31 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                 begin
                     CurrPage.SetSelectionFilter(SelPurchInv);
 
+                    // 🔒 CRITICAL: only explicit user selection
+                    SelPurchInv.MarkedOnly(true);
+
                     if SelPurchInv.IsEmpty() then
                         Error('No invoices selected.');
 
-                    if SelPurchInv.FindSet() then
-                        repeat
-                            SelectedInvoiceNos.Add(SelPurchInv."No.");
-                        until SelPurchInv.Next() = 0;
+                    SelPurchInv.FindSet();
+                    repeat
+                        SelectedInvoiceNos.Add(SelPurchInv."No.");
+                    until SelPurchInv.Next() = 0;
 
                     if not Confirm(
-                        'Do you want to cancel scheduled payment for selected invoice(s)?',
+                        StrSubstNo(
+                            'Cancel scheduled payment for %1 invoice(s)?\%2',
+                            SelectedInvoiceNos.Count(),
+                            FormatInvoiceList(SelectedInvoiceNos)
+                        ),
                         false
                     ) then
                         exit;
 
                     PaymentService.CancelScheduledInvoices(SelectedInvoiceNos);
 
-                    CurrPage.Update(false);
+                    // 🔄 Hard refresh (selection naturally resets)
+                    CurrPage.Update(true);
                 end;
             }
 
@@ -210,5 +218,16 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                         exit;
                     end;
             until SelInv.Next() = 0;
+    end;
+
+    local procedure FormatInvoiceList(InvoiceNos: List of [Code[20]]): Text
+    var
+        i: Integer;
+        Txt: Text;
+    begin
+        for i := 1 to InvoiceNos.Count() do
+            Txt += '• ' + InvoiceNos.Get(i) + '\';
+
+        exit(Txt);
     end;
 }
