@@ -7,16 +7,12 @@ codeunit 50104 "Chiizu Payment Service"
     var
         Setup: Record "Chiizu Setup";
         VendLedgEntry: Record "Vendor Ledger Entry";
-        InvoiceStatus: Record "Chiizu Invoice Status";
-
         Payload: JsonObject;
         Invoices: JsonArray;
         Obj: JsonObject;
-
         ResponseText: Text;
         InvNo: Code[20];
         i: Integer;
-
         PayableVLE: Record "Vendor Ledger Entry";
         RemainingAmount: Decimal;
         FoundPayable: Boolean;
@@ -25,7 +21,6 @@ codeunit 50104 "Chiizu Payment Service"
             Error('No invoices were provided.');
 
         GetOrCreateSetup(Setup);
-
         Clear(Payload);
         Clear(Invoices);
 
@@ -90,7 +85,6 @@ codeunit 50104 "Chiizu Payment Service"
                     'scheduledDate',
                     Format(TempSchedule."Scheduled Date", 0, '<Year4>-<Month,2>-<Day,2>')
                 );
-
                 Schedules.Add(Obj);
             until TempSchedule.Next() = 0;
 
@@ -105,24 +99,21 @@ codeunit 50104 "Chiizu Payment Service"
     end;
 
     // --------------------------
-    // BULK CANCEL SCHEDULED PAYMENTS  ✅ NEW
+    // BULK CANCEL SCHEDULED PAYMENTS
     // --------------------------
     procedure CancelScheduledInvoices(SelectedInvoiceNos: List of [Code[20]])
     var
         Setup: Record "Chiizu Setup";
         InvoiceStatus: Record "Chiizu Invoice Status";
-
         Payload: JsonObject;
         Invoices: JsonArray;
         Obj: JsonObject;
-
         ResponseText: Text;
         InvNo: Code[20];
         i: Integer;
-
+        EffectiveStatus: Enum "Chiizu Payment Status";
         InvalidInvoices: Text;
         HasInvalid: Boolean;
-        EffectiveStatus: Enum "Chiizu Payment Status";
     begin
         if SelectedInvoiceNos.Count() = 0 then
             Error('No invoices were provided.');
@@ -134,11 +125,8 @@ codeunit 50104 "Chiizu Payment Service"
         HasInvalid := false;
         InvalidInvoices := '';
 
-        // 🔍 VALIDATION PASS
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
-
-            // Default effective status
             EffectiveStatus := EffectiveStatus::Open;
 
             if InvoiceStatus.Get(InvNo) then
@@ -147,31 +135,22 @@ codeunit 50104 "Chiizu Payment Service"
             if EffectiveStatus <> EffectiveStatus::Scheduled then begin
                 HasInvalid := true;
                 InvalidInvoices +=
-                    StrSubstNo(
-                        '• %1 (status = %2)',
-                        InvNo,
-                        EffectiveStatus
-                    ) + '\';
+                    StrSubstNo('• %1 (status = %2)', InvNo, EffectiveStatus) + '\';
             end;
         end;
 
         if HasInvalid then
             Error(
-                'Cancel Scheduled Payment failed.' +
-                '\' +
-                'The following invoices are not in Scheduled status:' +
-                '\' +
+                'Cancel Scheduled Payment failed.' + '\' +
+                'The following invoices are not in Scheduled status:' + '\' +
                 InvalidInvoices
             );
 
-        // ✅ BUILD PAYLOAD
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
-
             Clear(Obj);
             Obj.Add('invoiceNo', InvNo);
             Obj.Add('action', 'CANCEL');
-
             Invoices.Add(Obj);
         end;
 
@@ -192,12 +171,10 @@ codeunit 50104 "Chiizu Payment Service"
         Results: JsonArray;
         ItemToken: JsonToken;
         FieldToken: JsonToken;
-
         InvoiceNo: Code[20];
         ApiStatus: Text;
         ScheduledDateTxt: Text;
         ScheduledDate: Date;
-
         InvoiceStatus: Record "Chiizu Invoice Status";
         EnumStatus: Enum "Chiizu Payment Status";
         i: Integer;
@@ -229,14 +206,11 @@ codeunit 50104 "Chiizu Payment Service"
             if not InvoiceStatus.Get(InvoiceNo) then begin
                 InvoiceStatus.Init();
                 InvoiceStatus."Invoice No." := InvoiceNo;
-                InvoiceStatus.Status := EnumStatus;
-                InvoiceStatus."Scheduled Date" := ScheduledDate;
                 InvoiceStatus.Insert(true);
-            end else begin
-                InvoiceStatus.Status := EnumStatus;
-                InvoiceStatus."Scheduled Date" := ScheduledDate;
-                InvoiceStatus.Modify(true);
             end;
+
+            // ✅ ONLY SYSTEM UPDATE
+            InvoiceStatus.SetStatusSystem(EnumStatus, ScheduledDate);
         end;
     end;
 
@@ -276,7 +250,6 @@ codeunit 50104 "Chiizu Payment Service"
             PayableVLE := VLE;
             exit(true);
         end;
-
         exit(false);
     end;
 
@@ -320,11 +293,8 @@ codeunit 50104 "Chiizu Payment Service"
     begin
         exit(
             'BC-' +
-            Format(
-                CurrentDateTime(),
-                0,
-                '<Year4>-<Month,2>-<Day,2>T<Hour,2>:<Minute,2>:<Second,2>'
-            )
+            Format(CurrentDateTime(), 0,
+            '<Year4>-<Month,2>-<Day,2>T<Hour,2>:<Minute,2>:<Second,2>')
         );
     end;
 
