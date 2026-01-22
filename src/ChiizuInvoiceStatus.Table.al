@@ -9,6 +9,7 @@ table 50110 "Chiizu Invoice Status"
             DataClassification = CustomerContent;
         }
 
+        // Enum lifecycle
         field(2; Status; Enum "Chiizu Payment Status")
         {
             DataClassification = CustomerContent;
@@ -28,7 +29,7 @@ table 50110 "Chiizu Invoice Status"
             end;
         }
 
-        field(3; "Vendor No."; Code[20])
+        /* field(3; "Vendor No."; Code[20])
         {
             DataClassification = CustomerContent;
         }
@@ -42,11 +43,31 @@ table 50110 "Chiizu Invoice Status"
         {
             DataClassification = SystemMetadata;
         }
-
+ */
+        // For scheduled payments
         field(6; "Scheduled Date"; Date)
         {
             DataClassification = CustomerContent;
         }
+
+        // Webhook matching
+        field(7; "Payment Intent Id"; Code[50])
+        {
+            DataClassification = SystemMetadata;
+        }
+
+        // Journal reference
+        field(8; "Last Payment Reference"; Code[50])
+        {
+            DataClassification = CustomerContent;
+        }
+
+        // Audit
+        field(9; "Last Updated At"; DateTime)
+        {
+            DataClassification = SystemMetadata;
+        }
+
     }
 
     keys

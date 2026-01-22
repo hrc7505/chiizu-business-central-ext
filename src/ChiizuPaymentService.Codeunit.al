@@ -16,6 +16,9 @@ codeunit 50104 "Chiizu Payment Service"
         PayableVLE: Record "Vendor Ledger Entry";
         RemainingAmount: Decimal;
         FoundPayable: Boolean;
+        Batch: Record "Chiizu Payment Batch";
+        TotalAmount: Decimal;
+        BatchId: Code[50];
     begin
         if SelectedInvoiceNos.Count() = 0 then
             Error('No invoices were provided.');
@@ -47,10 +50,22 @@ codeunit 50104 "Chiizu Payment Service"
             );
 
             Invoices.Add(Obj);
+            TotalAmount += RemainingAmount;
         end;
 
-        Payload.Add('batchId', CreateBatchId());
+        BatchId := CreateBatchId();
+
+        Batch.Init();
+        Batch."Batch Id" := BatchId;
+        Batch."Vendor No." := PayableVLE."Vendor No.";
+        Batch."Total Amount" := TotalAmount;
+        Batch.Status := Enum::"Chiizu Payment Status"::Processing;
+        Batch."Created At" := CurrentDateTime();
+        Batch.Insert(true);
+
+        Payload.Add('batchId', BatchId);
         Payload.Add('invoices', Invoices);
+        Payload.Add('callbackUrl', Setup."Webhook URL");
 
         ResponseText := CallBulkAPI(Setup, Payload, Setup."API Base URL");
         ApplyApiResult(ResponseText);
@@ -168,49 +183,23 @@ codeunit 50104 "Chiizu Payment Service"
     local procedure ApplyApiResult(ResponseText: Text)
     var
         Root: JsonObject;
-        Results: JsonArray;
-        ItemToken: JsonToken;
-        FieldToken: JsonToken;
-        InvoiceNo: Code[20];
-        ApiStatus: Text;
-        ScheduledDateTxt: Text;
-        ScheduledDate: Date;
-        InvoiceStatus: Record "Chiizu Invoice Status";
-        EnumStatus: Enum "Chiizu Payment Status";
-        i: Integer;
+        Token: JsonToken;
+        Value: JsonValue;
+        BatchId: Code[50];
+        Batch: Record "Chiizu Payment Batch";
     begin
         if not Root.ReadFrom(ResponseText) then
             Error('Invalid API response.');
 
-        if not Root.Get('invoices', FieldToken) then
-            Error('API response missing invoices.');
+        if not Root.Get('batchId', Token) then
+            Error('batchId not found in API response.');
 
-        Results := FieldToken.AsArray();
+        Value := Token.AsValue();
+        BatchId := Value.AsText();
 
-        for i := 0 to Results.Count() - 1 do begin
-            Results.Get(i, ItemToken);
-
-            ItemToken.AsObject().Get('invoiceNo', FieldToken);
-            InvoiceNo := FieldToken.AsValue().AsCode();
-
-            ItemToken.AsObject().Get('status', FieldToken);
-            ApiStatus := UpperCase(FieldToken.AsValue().AsText());
-            EnumStatus := MapApiStatus(ApiStatus);
-
-            Clear(ScheduledDate);
-            if ItemToken.AsObject().Get('scheduledDate', FieldToken) then begin
-                ScheduledDateTxt := FieldToken.AsValue().AsText();
-                Evaluate(ScheduledDate, ScheduledDateTxt);
-            end;
-
-            if not InvoiceStatus.Get(InvoiceNo) then begin
-                InvoiceStatus.Init();
-                InvoiceStatus."Invoice No." := InvoiceNo;
-                InvoiceStatus.Insert(true);
-            end;
-
-            // ✅ ONLY SYSTEM UPDATE
-            InvoiceStatus.SetStatusSystem(EnumStatus, ScheduledDate);
+        if Batch.Get(BatchId) then begin
+            Batch.Status := Enum::"Chiizu Payment Status"::Processing;
+            Batch.Modify(true);
         end;
     end;
 

@@ -1,3 +1,7 @@
+// ----------------------------------
+// Invoice state and payment execution state must be correlated, and this table is your single correlation point.
+// Invoice ↔ Payment Execution bridge
+// ----------------------------------
 enum 50111 "Chiizu Payment Status"
 {
     Extensible = true;
