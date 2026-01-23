@@ -16,6 +16,8 @@ table 50149 "Chiizu Payment Webhook"
         field(4; "Payment Reference"; Code[50]) { }
 
         field(5; "Received At"; DateTime) { }
+
+        field(40; "Webhook Secret"; Text[100]) { }
     }
 
     keys

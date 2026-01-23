@@ -19,10 +19,20 @@ page 50140 "Chiizu Payment Webhook API"
                 field(batchId; Rec."Batch Id") { }
                 field(status; Rec.Status) { }
                 field(paymentReference; Rec."Payment Reference") { }
+                field(webhookSecret; Rec."Webhook Secret") { }
             }
         }
     }
 
-    // 🚫 NO triggers
-    // 🚫 NO Codeunit.Run
+    trigger OnInsertRecord(BelowxRec: Boolean): Boolean
+    var
+        Setup: Record "Chiizu Setup";
+    begin
+        Setup.Get();
+
+        if Rec."Webhook Secret" <> Setup."Webhook Secret" then
+            Error('Invalid webhook secret.');
+
+        Codeunit.Run(Codeunit::"Chiizu Payment Processor", Rec);
+    end;
 }

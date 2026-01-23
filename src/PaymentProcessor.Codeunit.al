@@ -27,7 +27,7 @@ codeunit 50141 "Chiizu Payment Processor"
         case Status of
             Enum::"Chiizu Payment Status"::ExternalPaid:
                 begin
-                    CreateAndPostPayment(Batch);
+                    CreateAndPostPaymentLines(Batch);
 
                     Batch.Status := Enum::"Chiizu Payment Status"::Paid;
                     Batch."Payment Reference" := PaymentRef;
@@ -43,11 +43,13 @@ codeunit 50141 "Chiizu Payment Processor"
         end;
     end;
 
-    local procedure CreateAndPostPayment(Batch: Record "Chiizu Payment Batch")
+    local procedure CreateAndPostPaymentLines(Batch: Record "Chiizu Payment Batch")
     var
         GenJnlLine: Record "Gen. Journal Line";
         GenJnlPost: Codeunit "Gen. Jnl.-Post";
+        PostingHelper: Codeunit "Chiizu Payment Posting Helper";
     begin
+        PostingHelper.PostBatch(Batch);
         GenJnlLine.Init();
         GenJnlLine.Validate("Journal Template Name", 'PAYMENTS');
         GenJnlLine.Validate("Journal Batch Name", 'DEFAULT');
