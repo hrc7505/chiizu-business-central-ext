@@ -9,30 +9,39 @@ codeunit 50141 "Chiizu Payment Processor"
         );
     end;
 
-    local procedure ProcessWebhook(
-        BatchId: Code[50];
-        Status: Enum "Chiizu Payment Status";
-        PaymentRef: Code[50]
-    )
+    local procedure ProcessWebhook(BatchId: Code[50]; Status: Enum "Chiizu Payment Status"; PaymentRef: Code[50])
     var
         Batch: Record "Chiizu Payment Batch";
+        WebhookLog: Record "Chiizu Payment Webhook Log";
     begin
+        // 🔒 Idempotency check
+        if WebhookLog.Get(BatchId, Status) then
+            exit; // already processed
+
+        // Log webhook
+        WebhookLog.Init();
+        WebhookLog."Batch Id" := BatchId;
+        WebhookLog.Status := Status;
+        WebhookLog."Payment Reference" := PaymentRef;
+        WebhookLog."Received At" := CurrentDateTime();
+        WebhookLog.Insert(true);
+
+        // Load batch
         if not Batch.Get(BatchId) then
             Error('Payment batch %1 not found.', BatchId);
 
-        // 🔒 Idempotency protection
-        if Batch.Status = Enum::"Chiizu Payment Status"::Paid then
-            exit;
-
         case Status of
-            Enum::"Chiizu Payment Status"::ExternalPaid:
+            Enum::"Chiizu Payment Status"::Paid:
                 begin
-                    CreateAndPostPaymentLines(Batch);
+                    // 🚨 SAFETY: only post once
+                    if Batch.Status <> Enum::"Chiizu Payment Status"::ExternalPaid then begin
+                        CreateAndPostPaymentLines(Batch);
 
-                    Batch.Status := Enum::"Chiizu Payment Status"::Paid;
-                    Batch."Payment Reference" := PaymentRef;
-                    Batch."Posted At" := CurrentDateTime();
-                    Batch.Modify(true);
+                        Batch.Status := Enum::"Chiizu Payment Status"::ExternalPaid;
+                        Batch."Payment Reference" := PaymentRef;
+                        Batch."Posted At" := CurrentDateTime();
+                        Batch.Modify(true);
+                    end;
                 end;
 
             Enum::"Chiizu Payment Status"::Failed:
@@ -42,6 +51,7 @@ codeunit 50141 "Chiizu Payment Processor"
                 end;
         end;
     end;
+
 
     local procedure CreateAndPostPaymentLines(Batch: Record "Chiizu Payment Batch")
     var
