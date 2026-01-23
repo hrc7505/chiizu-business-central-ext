@@ -10,8 +10,6 @@ table 50103 "Chiizu Setup"
         }
         field(2; "API Base URL"; Text[250]) { }
 
-        field(3; "Webhook URL"; Text[250]) { }
-
         field(4; "Webhook Secret"; Text[100])
         {
             Caption = 'Webhook Secret';

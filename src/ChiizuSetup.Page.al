@@ -14,6 +14,11 @@ page 50103 "Chiizu Setup"
             {
                 field("API Base URL"; Rec."API Base URL") { }
             }
+
+            group(Webhook)
+            {
+                field("Webhook Secret"; Rec."Webhook Secret") { }
+            }
         }
     }
 

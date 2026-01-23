@@ -19,6 +19,7 @@ codeunit 50104 "Chiizu Payment Service"
         Batch: Record "Chiizu Payment Batch";
         TotalAmount: Decimal;
         BatchId: Code[50];
+        UrlHelper: Codeunit "Chiizu Url Helper";
     begin
         if SelectedInvoiceNos.Count() = 0 then
             Error('No invoices were provided.');
@@ -65,7 +66,7 @@ codeunit 50104 "Chiizu Payment Service"
 
         Payload.Add('batchId', BatchId);
         Payload.Add('invoices', Invoices);
-        Payload.Add('callbackUrl', Setup."Webhook URL");
+        Payload.Add('callbackUrl', UrlHelper.GetPaymentWebhookUrl());
 
         ResponseText := CallBulkAPI(Setup, Payload, Setup."API Base URL");
         ApplyApiResult(ResponseText);
