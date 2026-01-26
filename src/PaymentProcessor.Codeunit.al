@@ -1,14 +1,19 @@
 codeunit 50141 "Chiizu Payment Processor"
 {
-    procedure Run(var WebhookRec: Record "Chiizu Payment Webhook")
+    procedure Run(Webhook: Record "Chiizu Payment Webhook")
+    var
+        InvoiceStatus: Record "Chiizu Invoice Status";
     begin
-        if WebhookRec."Batch Id" = '' then
-            Error('Webhook Batch Id is missing.');
+        if not InvoiceStatus.Get(Webhook."Invoice No.") then
+            Error('Invoice %1 not found.', Webhook."Invoice No.");
 
-        ProcessWebhook(
-            WebhookRec."Batch Id",
-            WebhookRec.Status,
-            WebhookRec."Payment Reference"
+        InvoiceStatus."Batch Id" := Webhook."Payment Intent Id";
+        InvoiceStatus."Last Payment Reference" := Webhook."Payment Reference";
+        InvoiceStatus."Last Updated At" := CurrentDateTime();
+
+        InvoiceStatus.SetStatusSystem(
+            Webhook.Status,
+            0D
         );
     end;
 

@@ -2,13 +2,14 @@ page 50140 "Chiizu Payment Webhook API"
 {
     PageType = API;
     SourceTable = "Chiizu Payment Webhook";
-    DelayedInsert = true;
 
     APIPublisher = 'chiizu';
     APIGroup = 'payments';
     APIVersion = 'v1.0';
-    EntityName = 'paymentWebhook';
-    EntitySetName = 'paymentWebhooks';
+    EntityName = 'webhook';
+    EntitySetName = 'webhooks';
+
+    DelayedInsert = true;
 
     layout
     {
@@ -17,22 +18,13 @@ page 50140 "Chiizu Payment Webhook API"
             repeater(Group)
             {
                 field(batchId; Rec."Batch Id") { }
-                field(status; Rec.Status) { }
+                field(invoiceNo; Rec."Invoice No.") { }
+                field(paymentIntentId; Rec."Payment Intent Id") { }
                 field(paymentReference; Rec."Payment Reference") { }
-                field(webhookSecret; Rec."Webhook Secret") { }
+                field(status; Rec.Status) { }
+                field(signature; Rec.Signature) { }
+                field(payload; Rec.Payload) { }
             }
         }
     }
-
-    trigger OnInsertRecord(BelowxRec: Boolean): Boolean
-    var
-        Setup: Record "Chiizu Setup";
-    begin
-        Setup.Get();
-
-        if Rec."Webhook Secret" <> Setup."Webhook Secret" then
-            Error('Invalid webhook secret.');
-
-        Codeunit.Run(Codeunit::"Chiizu Payment Processor", Rec);
-    end;
 }

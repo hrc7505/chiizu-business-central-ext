@@ -1,6 +1,6 @@
 table 50149 "Chiizu Payment Webhook"
 {
-    DataClassification = CustomerContent;
+    DataClassification = SystemMetadata;
 
     fields
     {
@@ -10,47 +10,39 @@ table 50149 "Chiizu Payment Webhook"
         }
 
         field(2; "Batch Id"; Code[50]) { }
+        field(3; "Invoice No."; Code[20]) { }
+        field(4; "Payment Intent Id"; Code[50]) { }
+        field(5; "Payment Reference"; Code[50]) { }
 
-        field(3; Status; Enum "Chiizu Payment Status") { }
+        field(6; Status; Enum "Chiizu Payment Status") { }
 
-        field(4; "Payment Reference"; Code[50]) { }
+        // 🔐 Provided by gateway (HMAC / signature)
+        field(7; "Signature"; Text[250]) { }
 
-        field(5; "Received At"; DateTime) { }
-
-        field(40; "Webhook Secret"; Text[100]) { }
-
-        field(10; Signature; Text[100])
-        {
-            Caption = 'Signature';
-            DataClassification = SystemMetadata;
-        }
+        // 🔍 Audit
+        field(8; "Received At"; DateTime) { }
+        field(9; Payload; Text[2048]) { }
     }
 
     keys
     {
-        key(PK; "Entry No.")
-        {
-            Clustered = true;
-        }
+        key(PK; "Entry No.") { Clustered = true; }
     }
 
     trigger OnInsert()
     var
+        Verifier: Codeunit "Chiizu Webhook Verifier";
         Processor: Codeunit "Chiizu Payment Processor";
         RecCopy: Record "Chiizu Payment Webhook";
-        WebhookVerifier: Codeunit "Chiizu Webhook Verifier";
     begin
-        // 1️⃣ Verify FIRST
-        WebhookVerifier.Verify(Rec);
-
-        // 2️⃣ System timestamp
+        Message(
+        '🔥 WEBHOOK RECEIVED 🔥\Batch=%1 Status=%2',
+        "Batch Id",
+        Status
+    );
         "Received At" := CurrentDateTime();
 
-        // 3️⃣ Use copy (safe pattern)
-        RecCopy := Rec;
-
-        // 4️⃣ Process webhook
-        Processor.Run(RecCopy);
+        RecCopy := Rec;                    // Safety copy
+        Processor.Run(RecCopy);            // Business logic
     end;
-
 }

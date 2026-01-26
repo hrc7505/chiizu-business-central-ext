@@ -51,7 +51,7 @@ table 50110 "Chiizu Invoice Status"
         }
 
         // Webhook matching
-        field(7; "Payment Intent Id"; Code[50])
+        field(7; "Batch Id"; Code[50])
         {
             DataClassification = SystemMetadata;
         }

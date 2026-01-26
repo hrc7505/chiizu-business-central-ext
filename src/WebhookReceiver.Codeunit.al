@@ -10,6 +10,11 @@ codeunit 50140 "Chiizu Webhook Receiver"
         WebhookRec: Record "Chiizu Payment Webhook";
         Processor: Codeunit "Chiizu Payment Processor";
     begin
+        Message(
+  'Chiizu Webhook Receiver: 🔥 WEBHOOK RECEIVED 🔥\Batch=%1 Status=%2',
+  BatchId,
+  Status
+);
         // ✅ VERIFIER GOES HERE
         Setup.Get();
         if IncomingSecret <> Setup."Webhook Secret" then

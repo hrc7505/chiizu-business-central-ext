@@ -63,6 +63,7 @@ codeunit 50104 "Chiizu Payment Service"
         Batch.Status := Enum::"Chiizu Payment Status"::Processing;
         Batch."Created At" := CurrentDateTime();
         Batch.Insert(true);
+        MarkInvoicesProcessing(SelectedInvoiceNos, BatchId);
 
         Payload.Add('batchId', BatchId);
         Payload.Add('invoices', Invoices);
@@ -296,4 +297,34 @@ codeunit 50104 "Chiizu Payment Service"
             Setup.Insert(true);
         end;
     end;
+
+    local procedure MarkInvoicesProcessing(
+    SelectedInvoiceNos: List of [Code[20]];
+    BatchId: Code[50]
+)
+    var
+        InvoiceStatus: Record "Chiizu Invoice Status";
+        InvNo: Code[20];
+        i: Integer;
+    begin
+        for i := 1 to SelectedInvoiceNos.Count() do begin
+            InvNo := SelectedInvoiceNos.Get(i);
+
+            if not InvoiceStatus.Get(InvNo) then begin
+                InvoiceStatus.Init();
+                InvoiceStatus."Invoice No." := InvNo;
+                InvoiceStatus.Insert(true);
+            end;
+
+            InvoiceStatus.SetStatusSystem(
+                Enum::"Chiizu Payment Status"::Processing,
+                0D
+            );
+
+            InvoiceStatus."Batch Id" := BatchId;
+            InvoiceStatus."Last Updated At" := CurrentDateTime();
+            InvoiceStatus.Modify(true);
+        end;
+    end;
+
 }
