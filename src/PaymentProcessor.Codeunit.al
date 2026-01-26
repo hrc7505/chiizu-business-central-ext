@@ -2,6 +2,9 @@ codeunit 50141 "Chiizu Payment Processor"
 {
     procedure Run(var WebhookRec: Record "Chiizu Payment Webhook")
     begin
+        if WebhookRec."Batch Id" = '' then
+            Error('Webhook Batch Id is missing.');
+
         ProcessWebhook(
             WebhookRec."Batch Id",
             WebhookRec.Status,
@@ -15,8 +18,8 @@ codeunit 50141 "Chiizu Payment Processor"
         WebhookLog: Record "Chiizu Payment Webhook Log";
     begin
         // 🔒 Idempotency check
-        if WebhookLog.Get(BatchId, Status) then
-            exit; // already processed
+        if WebhookLog.Get(BatchId, Status, PaymentRef) then
+            exit;
 
         // Log webhook
         WebhookLog.Init();
@@ -59,6 +62,9 @@ codeunit 50141 "Chiizu Payment Processor"
         GenJnlPost: Codeunit "Gen. Jnl.-Post";
         PostingHelper: Codeunit "Chiizu Payment Posting Helper";
     begin
+        if Batch."Total Amount" = 0 then
+            Error('Cannot post zero-amount payment for batch %1.', Batch."Batch Id");
+
         PostingHelper.PostBatch(Batch);
         GenJnlLine.Init();
         GenJnlLine.Validate("Journal Template Name", 'PAYMENTS');

@@ -12,6 +12,6 @@ table 50143 "Chiizu Payment Webhook Log"
 
     keys
     {
-        key(PK; "Batch Id", Status) { Clustered = true; }
+        key(PK; "Batch Id", Status, "Payment Reference") { Clustered = true; }
     }
 }
