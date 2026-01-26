@@ -15,6 +15,15 @@ table 50103 "Chiizu Setup"
             Caption = 'Webhook Secret';
             DataClassification = SystemMetadata;
         }
+        field(20; "Payment Jnl. Template"; Code[10])
+        {
+            DataClassification = CustomerContent;
+        }
+
+        field(21; "Payment Jnl. Batch"; Code[10])
+        {
+            DataClassification = CustomerContent;
+        }
 
     }
 

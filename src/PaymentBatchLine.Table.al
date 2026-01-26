@@ -4,7 +4,7 @@ table 50142 "Chiizu Payment Batch Line"
 
     fields
     {
-        field(1; "Batch Id"; Code[50]) { }
+        field(1; "Batch Id"; Code[20]) { }
         field(2; "Line No."; Integer) { }
         field(3; "Invoice No."; Code[20]) { }
         field(4; "Vendor No."; Code[20]) { }

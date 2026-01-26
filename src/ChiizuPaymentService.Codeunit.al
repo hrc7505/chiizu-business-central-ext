@@ -280,12 +280,15 @@ codeunit 50104 "Chiizu Payment Service"
         exit(ResponseText);
     end;
 
-    local procedure CreateBatchId(): Code[50]
+    local procedure CreateBatchId(): Code[20]
+    var
+        dt: DateTime;
     begin
+        dt := CurrentDateTime();
+        // Example: BC20260126154620
         exit(
-            'BC-' +
-            Format(CurrentDateTime(), 0,
-            '<Year4>-<Month,2>-<Day,2>T<Hour,2>:<Minute,2>:<Second,2>')
+            'BC' +
+            Format(dt, 0, '<Year4><Month,2><Day,2><Hours24,2><Minutes,2><Seconds,2>')
         );
     end;
 
