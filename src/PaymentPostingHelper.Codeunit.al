@@ -1,59 +1,95 @@
 codeunit 50143 "Chiizu Payment Posting Helper"
 {
-    procedure PostBatch(Batch: Record "Chiizu Payment Batch")
+    procedure PostPayment(Batch: Record "Chiizu Payment Batch")
     var
         GenJnlLine: Record "Gen. Journal Line";
-        GenJnlPost: Codeunit "Gen. Jnl.-Post";
+        GenJnlPostLine: Codeunit "Gen. Jnl.-Post Line";
     begin
+        // -------------------------------
         // Safety checks
+        // -------------------------------
         if Batch."Total Amount" <= 0 then
             Error('Payment amount must be greater than zero.');
 
         if Batch."Vendor No." = '' then
             Error('Vendor No. is missing.');
 
-        /* if Batch."Bank Account No." = '' then
-            Error('Bank Account No. is missing.'); */
+        if Batch."Invoice No." = '' then
+            Error('Invoice No. is missing in payment batch %1.', Batch."Batch Id");
 
+        // -------------------------------
+        // Init Payment Journal Line
+        // -------------------------------
         GenJnlLine.Init();
+        GenJnlLine.Validate("Journal Template Name", 'PAYMENT');
+        GenJnlLine.Validate("Journal Batch Name", 'PMT REG');
+        GenJnlLine."Line No." := GetNextLineNo('PAYMENT', 'PMT REG');
 
-        // Required identifiers
-        GenJnlLine.Validate("Journal Template Name", 'GENERAL');
-        GenJnlLine.Validate("Journal Batch Name", 'DEFAULT');
-        GenJnlLine."Line No." := GetNextLineNo('GENERAL', 'DEFAULT');
-
+        // -------------------------------
         // Document info
+        // -------------------------------
+        GenJnlLine.Validate("Posting Date", Today());
         GenJnlLine.Validate("Document Type", GenJnlLine."Document Type"::Payment);
         GenJnlLine.Validate("Document No.", Batch."Batch Id");
-        GenJnlLine.Validate("Posting Date", Today());
 
-        // Vendor (payment FROM company)
+        // -------------------------------
+        // Vendor (who we pay)
+        // -------------------------------
         GenJnlLine.Validate("Account Type", GenJnlLine."Account Type"::Vendor);
         GenJnlLine.Validate("Account No.", Batch."Vendor No.");
 
-        // Bank (money goes OUT from bank)
+        // -------------------------------
+        // Bank (money goes out)
+        // -------------------------------
         GenJnlLine.Validate(
             "Bal. Account Type",
             GenJnlLine."Bal. Account Type"::"Bank Account"
         );
         GenJnlLine.Validate(
             "Bal. Account No.",
-           'CHECKING'  // todo: Hardcoded for now; later from setup or batch
+            'CHECKING' // TODO: move to setup later
         );
 
-        // ✅ MUST be POSITIVE
-        GenJnlLine.Validate(Amount, Batch."Total Amount");
+        // -------------------------------
+        // Amount (PAYMENT MUST BE NEGATIVE)
+        // -------------------------------
+        GenJnlLine.Validate(Amount, -Batch."Total Amount");
 
-        // Optional but recommended
+        // -------------------------------
+        // 🔥 THIS IS THE KEY PART 🔥
+        // Auto-application setup
+        // -------------------------------
+        GenJnlLine.Validate(
+            "Applies-to Doc. Type",
+            GenJnlLine."Applies-to Doc. Type"::Invoice
+        );
+        GenJnlLine.Validate("Applies-to Doc. No.", Batch."Invoice No.");
+
+        // Optional but useful
         GenJnlLine."External Document No." := Batch."Payment Reference";
+        GenJnlLine.Description := 'Chiizu payment';
 
+        // -------------------------------
+        // Insert + Post
+        // -------------------------------
         GenJnlLine.Insert(true);
+        GenJnlPostLine.RunWithCheck(GenJnlLine);
 
-        // Post the journal
-        GenJnlPost.Run(GenJnlLine);
+        // 🎉 DONE
+        // BC will now:
+        // - Create Vendor Ledger Entry
+        // - Apply payment to invoice
+        // - Close invoice if fully paid
+        // - Update Remaining Amount
     end;
 
-    local procedure GetNextLineNo(TemplateName: Code[10]; BatchName: Code[10]): Integer
+    // ----------------------------------------------------
+    // Helper: Next Line No.
+    // ----------------------------------------------------
+    local procedure GetNextLineNo(
+        TemplateName: Code[10];
+        BatchName: Code[10]
+    ): Integer
     var
         GenJnlLine: Record "Gen. Journal Line";
     begin
@@ -66,5 +102,4 @@ codeunit 50143 "Chiizu Payment Posting Helper"
         else
             exit(10000);
     end;
-
 }

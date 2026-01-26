@@ -18,7 +18,7 @@ codeunit 50141 "Chiizu Payment Processor"
         Batch: Record "Chiizu Payment Batch";
         WebhookLog: Record "Chiizu Payment Webhook Log";
     begin
-        // 🔒 STRONG idempotency (Batch + Status)
+        // 🔒 Idempotency
         WebhookLog.Reset();
         WebhookLog.SetRange("Batch Id", BatchId);
         WebhookLog.SetRange(Status, Status);
@@ -33,31 +33,29 @@ codeunit 50141 "Chiizu Payment Processor"
         WebhookLog."Received At" := CurrentDateTime();
         WebhookLog.Insert(true);
 
-        // 🔍 Always fetch fresh DB record
         if not Batch.Get(BatchId) then
             Error('Payment batch %1 not found.', BatchId);
 
         case Status of
-            Enum::"Chiizu Payment Status"::Paid:
+            Status::Paid:
                 begin
-                    // ✅ Idempotent guard
-                    if Batch.Status = Enum::"Chiizu Payment Status"::ExternalPaid then
+                    if Batch.Status = Status::ExternalPaid then
                         exit;
 
-                    // 💰 Post payment FIRST
+                    // 💰 Post payment via Gen. Journal
                     CreateAndPostPaymentLines(Batch);
 
                     // ✅ Update batch AFTER successful posting
-                    Batch.Status := Enum::"Chiizu Payment Status"::ExternalPaid;
+                    Batch.Status := Status::ExternalPaid;
                     Batch."Payment Reference" := PaymentRef;
                     Batch."Posted At" := CurrentDateTime();
                     Batch.Modify(true);
                 end;
 
-            Enum::"Chiizu Payment Status"::Failed:
+            Status::Failed:
                 begin
-                    if Batch.Status <> Enum::"Chiizu Payment Status"::Failed then begin
-                        Batch.Status := Enum::"Chiizu Payment Status"::Failed;
+                    if Batch.Status <> Status::Failed then begin
+                        Batch.Status := Status::Failed;
                         Batch.Modify(true);
                     end;
                 end;
@@ -68,6 +66,7 @@ codeunit 50141 "Chiizu Payment Processor"
     var
         PostingHelper: Codeunit "Chiizu Payment Posting Helper";
     begin
-        PostingHelper.PostBatch(Batch);
+        PostingHelper.PostPayment(Batch);
     end;
+
 }

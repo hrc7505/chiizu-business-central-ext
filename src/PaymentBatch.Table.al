@@ -40,6 +40,11 @@ table 50130 "Chiizu Payment Batch"
         {
             Caption = 'Posted At';
         }
+        field(20; "Invoice No."; Code[20])
+        {
+            DataClassification = CustomerContent;
+        }
+
     }
 
     keys
