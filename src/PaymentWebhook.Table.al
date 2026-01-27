@@ -4,17 +4,10 @@ table 50149 "Chiizu Payment Webhook"
 
     fields
     {
-        field(1; "Entry No."; Integer)
-        {
-            AutoIncrement = true;
-        }
-
+        field(1; "Entry No."; Integer) { AutoIncrement = true; }
         field(2; "Batch Id"; Code[20]) { }
-
         field(3; Status; Enum "Chiizu Payment Status") { }
-
         field(4; "Payment Reference"; Code[50]) { }
-
         field(5; "Received At"; DateTime) { }
     }
 
@@ -30,8 +23,7 @@ table 50149 "Chiizu Payment Webhook"
     begin
         "Received At" := CurrentDateTime();
 
-        // Always process via copy (BC best practice)
         RecCopy := Rec;
-        Processor.Run(RecCopy);
+        Processor.Run(RecCopy); // ✅ correct
     end;
 }

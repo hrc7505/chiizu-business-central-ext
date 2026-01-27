@@ -10,20 +10,7 @@ table 50103 "Chiizu Setup"
         }
         field(2; "API Base URL"; Text[250]) { }
 
-        field(4; "Webhook Secret"; Text[100])
-        {
-            Caption = 'Webhook Secret';
-            DataClassification = SystemMetadata;
-        }
-        field(20; "Payment Jnl. Template"; Code[10])
-        {
-            DataClassification = CustomerContent;
-        }
-
-        field(21; "Payment Jnl. Batch"; Code[10])
-        {
-            DataClassification = CustomerContent;
-        }
+        field(10; "Last Batch No."; Integer) { }
 
     }
 

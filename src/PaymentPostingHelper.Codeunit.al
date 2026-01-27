@@ -1,105 +1,92 @@
 codeunit 50143 "Chiizu Payment Posting Helper"
 {
-    procedure PostPayment(Batch: Record "Chiizu Payment Batch")
+    procedure PostBatch(var Batch: Record "Chiizu Payment Batch")
     var
         GenJnlLine: Record "Gen. Journal Line";
-        GenJnlPostLine: Codeunit "Gen. Jnl.-Post Line";
+        GenJnlPost: Codeunit "Gen. Jnl.-Post";
+        InvoiceStatus: Record "Chiizu Invoice Status";
+        VLE: Record "Vendor Ledger Entry";
+        AmountToPay: Decimal;
     begin
-        // -------------------------------
-        // Safety checks
-        // -------------------------------
-        if Batch."Total Amount" <= 0 then
-            Error('Payment amount must be greater than zero.');
+        EnsureJournalExists();
 
-        if Batch."Vendor No." = '' then
-            Error('Vendor No. is missing.');
+        InvoiceStatus.SetRange("Batch Id", Batch."Batch Id");
+        if not InvoiceStatus.FindSet() then
+            Error('No invoices found for batch %1', Batch."Batch Id");
 
-        if Batch."Invoice No." = '' then
-            Error('Invoice No. is missing in payment batch %1.', Batch."Batch Id");
+        repeat
+            // 🔎 Resolve Vendor Ledger Entry
+            VLE.Reset();
+            VLE.SetRange("Document Type", VLE."Document Type"::Invoice);
+            VLE.SetRange("Document No.", InvoiceStatus."Invoice No.");
+            VLE.SetRange("Vendor No.", Batch."Vendor No.");
+            VLE.SetRange(Open, true);
 
-        // -------------------------------
-        // Init Payment Journal Line
-        // -------------------------------
-        GenJnlLine.Init();
-        GenJnlLine.Validate("Journal Template Name", 'PAYMENT');
-        GenJnlLine.Validate("Journal Batch Name", 'PMT REG');
-        GenJnlLine."Line No." := GetNextLineNo('PAYMENT', 'PMT REG');
+            if not VLE.FindFirst() then
+                Error('Open vendor ledger entry not found for invoice %1', InvoiceStatus."Invoice No.");
 
-        // -------------------------------
-        // Document info
-        // -------------------------------
-        GenJnlLine.Validate("Posting Date", Today());
-        GenJnlLine.Validate("Document Type", GenJnlLine."Document Type"::Payment);
-        GenJnlLine.Validate("Document No.", Batch."Batch Id");
+            VLE.CalcFields("Remaining Amount");
+            AmountToPay := Abs(VLE."Remaining Amount");
 
-        // -------------------------------
-        // Vendor (who we pay)
-        // -------------------------------
-        GenJnlLine.Validate("Account Type", GenJnlLine."Account Type"::Vendor);
-        GenJnlLine.Validate("Account No.", Batch."Vendor No.");
+            if AmountToPay <= 0 then
+                Error('Invoice %1 has no remaining amount.', InvoiceStatus."Invoice No.");
 
-        // -------------------------------
-        // Bank (money goes out)
-        // -------------------------------
-        GenJnlLine.Validate(
-            "Bal. Account Type",
-            GenJnlLine."Bal. Account Type"::"Bank Account"
-        );
-        GenJnlLine.Validate(
-            "Bal. Account No.",
-            'CHECKING' // TODO: move to setup later
-        );
+            // 🧾 Create payment line
+            GenJnlLine.Init();
+            GenJnlLine.Validate("Journal Template Name", 'GENERAL');
+            GenJnlLine.Validate("Journal Batch Name", 'DEFAULT');
+            GenJnlLine."Line No." := GetNextLineNo();
 
-        // -------------------------------
-        // Amount (PAYMENT MUST BE NEGATIVE)
-        // -------------------------------
-        GenJnlLine.Validate(Amount, -Batch."Total Amount");
+            GenJnlLine.Validate("Document No.", Batch."Batch Id");
+            GenJnlLine.Validate("Document Type", GenJnlLine."Document Type"::Payment);
+            GenJnlLine.Validate("Posting Date", Today());
 
-        // -------------------------------
-        // 🔥 THIS IS THE KEY PART 🔥
-        // Auto-application setup
-        // -------------------------------
-        GenJnlLine.Validate(
-            "Applies-to Doc. Type",
-            GenJnlLine."Applies-to Doc. Type"::Invoice
-        );
-        GenJnlLine.Validate("Applies-to Doc. No.", Batch."Invoice No.");
+            // Vendor
+            GenJnlLine.Validate("Account Type", GenJnlLine."Account Type"::Vendor);
+            GenJnlLine.Validate("Account No.", Batch."Vendor No.");
 
-        // Optional but useful
-        GenJnlLine."External Document No." := Batch."Payment Reference";
-        GenJnlLine.Description := 'Chiizu payment';
+            // Bank
+            GenJnlLine.Validate("Bal. Account Type", GenJnlLine."Bal. Account Type"::"Bank Account");
+            GenJnlLine.Validate("Bal. Account No.", 'CHECKING');
 
-        // -------------------------------
-        // Insert + Post
-        // -------------------------------
-        GenJnlLine.Insert(true);
-        GenJnlPostLine.RunWithCheck(GenJnlLine);
+            // ✅ Correct amount
+            GenJnlLine.Validate(Amount, AmountToPay);
 
-        // 🎉 DONE
-        // BC will now:
-        // - Create Vendor Ledger Entry
-        // - Apply payment to invoice
-        // - Close invoice if fully paid
-        // - Update Remaining Amount
+            // ✅ Correct application
+            GenJnlLine."Applies-to Doc. Type" := GenJnlLine."Applies-to Doc. Type"::Invoice;
+            GenJnlLine."Applies-to Doc. No." := InvoiceStatus."Invoice No.";
+
+            GenJnlLine."External Document No." := Batch."Payment Reference";
+
+            GenJnlLine.Insert(true);
+            GenJnlPost.Run(GenJnlLine);
+
+        until InvoiceStatus.Next() = 0;
     end;
 
-    // ----------------------------------------------------
-    // Helper: Next Line No.
-    // ----------------------------------------------------
-    local procedure GetNextLineNo(
-        TemplateName: Code[10];
-        BatchName: Code[10]
-    ): Integer
+    local procedure GetNextLineNo(): Integer
     var
-        GenJnlLine: Record "Gen. Journal Line";
+        Line: Record "Gen. Journal Line";
     begin
-        GenJnlLine.Reset();
-        GenJnlLine.SetRange("Journal Template Name", TemplateName);
-        GenJnlLine.SetRange("Journal Batch Name", BatchName);
-
-        if GenJnlLine.FindLast() then
-            exit(GenJnlLine."Line No." + 10000)
-        else
-            exit(10000);
+        Line.SetRange("Journal Template Name", 'GENERAL');
+        Line.SetRange("Journal Batch Name", 'DEFAULT');
+        if Line.FindLast() then
+            exit(Line."Line No." + 10000);
+        exit(10000);
     end;
+
+    local procedure EnsureJournalExists()
+    var
+        Template: Record "Gen. Journal Template";
+        Batch: Record "Gen. Journal Batch";
+    begin
+        if not Template.Get('GENERAL') then
+            Error('General Journal Template GENERAL is missing.');
+
+        Batch.SetRange("Journal Template Name", 'GENERAL');
+        Batch.SetRange(Name, 'DEFAULT');
+        if not Batch.FindFirst() then
+            Error('General Journal Batch DEFAULT is missing.');
+    end;
+
 }

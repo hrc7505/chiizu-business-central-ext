@@ -1,5 +1,6 @@
 codeunit 50141 "Chiizu Payment Processor"
 {
+    // 🔑 PUBLIC ENTRY POINT (called from table trigger or webhook handler)
     procedure Run(var WebhookRec: Record "Chiizu Payment Webhook")
     begin
         ProcessWebhook(
@@ -10,54 +11,32 @@ codeunit 50141 "Chiizu Payment Processor"
     end;
 
     local procedure ProcessWebhook(
-        BatchId: Code[20];
-        Status: Enum "Chiizu Payment Status";
-        PaymentRef: Code[50]
-    )
+    BatchId: Code[50];
+    Status: Enum "Chiizu Payment Status";
+    PaymentRef: Code[50]
+)
     var
         Batch: Record "Chiizu Payment Batch";
-        WebhookLog: Record "Chiizu Payment Webhook Log";
+        PostingHelper: Codeunit "Chiizu Payment Posting Helper";
     begin
-        // 🔒 Idempotency
-        WebhookLog.Reset();
-        WebhookLog.SetRange("Batch Id", BatchId);
-        WebhookLog.SetRange(Status, Status);
-        if WebhookLog.FindFirst() then
-            exit;
-
-        // 📝 Log webhook reception
-        WebhookLog.Init();
-        WebhookLog."Batch Id" := BatchId;
-        WebhookLog.Status := Status;
-        WebhookLog."Payment Reference" := PaymentRef;
-        WebhookLog."Received At" := CurrentDateTime();
-        WebhookLog.Insert(true);
-
         if not Batch.Get(BatchId) then
-            Error('Payment batch %1 not found.', BatchId);
+            Error('Batch %1 not found.', BatchId);
 
         case Status of
             Status::Paid:
                 begin
-                    if Batch.Status = Status::ExternalPaid then
-                        exit;
-
-                    // 💰 Post payment via Gen. Journal
-                    CreateAndPostPaymentLines(Batch);
-
-                    // ✅ Update batch AFTER successful posting
-                    Batch.Status := Status::ExternalPaid;
+                    Batch.Status := Status::Paid;
                     Batch."Payment Reference" := PaymentRef;
-                    Batch."Posted At" := CurrentDateTime();
                     Batch.Modify(true);
+
+                    // ✅ Correct signature (ONLY batch)
+                    PostingHelper.PostBatch(Batch);
                 end;
 
             Status::Failed:
                 begin
-                    if Batch.Status <> Status::Failed then begin
-                        Batch.Status := Status::Failed;
-                        Batch.Modify(true);
-                    end;
+                    Batch.Status := Status::Failed;
+                    Batch.Modify(true);
                 end;
         end;
     end;
@@ -66,7 +45,6 @@ codeunit 50141 "Chiizu Payment Processor"
     var
         PostingHelper: Codeunit "Chiizu Payment Posting Helper";
     begin
-        PostingHelper.PostPayment(Batch);
+        PostingHelper.PostBatch(Batch);
     end;
-
 }
