@@ -55,7 +55,9 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                         until PurchHeader.Next() = 0;
 
                     PaymentService.PayInvoices(SelectedInvoiceNos);
-                    Message('%1 invoice(s) were successfully paid via Chiizu.', SelectedInvoiceNos.Count());
+
+                    Message('%1 invoice(s) sent to Chiizu for processing.', SelectedInvoiceNos.Count());
+
                 end;
             }
 

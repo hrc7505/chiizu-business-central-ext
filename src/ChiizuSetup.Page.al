@@ -13,7 +13,6 @@ page 50103 "Chiizu Setup"
             group(General)
             {
                 field("API Base URL"; Rec."API Base URL") { }
-                field("Test Mode"; Rec."Test Mode") { }
             }
         }
     }
