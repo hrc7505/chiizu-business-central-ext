@@ -2,7 +2,7 @@
   "id": "4acc57b8-c4ee-423b-867e-2bdbb1e0e5fc",
   "name": "Chiizu-BC",
   "publisher": "Default Publisher",
-  "version": "1.0.0.1",
+  "version": "1.0.0.2",
   "brief": "",
   "description": "",
   "privacyStatement": "",
@@ -10,10 +10,24 @@
   "help": "",
   "url": "",
   "logo": "",
-  "dependencies": [],
   "screenshots": [],
-  "platform": "26.0.0.0",
-  "application": "26.0.0.0",
+  "platform": "27.0.0.0",
+  "application": "27.0.0.0",
+  "runtime": "16.0",
+  "dependencies": [
+    {
+      "id": "63ca2fa4-4f03-4f2b-a480-172fef340d3f",
+      "publisher": "Microsoft",
+      "name": "System Application",
+      "version": "27.0.0.0"
+    },
+    {
+      "id": "437dbf0e-84ff-417a-965d-ed2bb9650972",
+      "publisher": "Microsoft",
+      "name": "Base Application",
+      "version": "27.0.0.0"
+    }
+  ],
   "idRanges": [
     {
       "from": 50100,
@@ -25,7 +39,6 @@
     "allowDownloadingSource": true,
     "includeSourceInSymbolFile": true
   },
-  "runtime": "15.0",
   "features": [
     "NoImplicitWith"
   ]
