@@ -12,6 +12,9 @@ table 50103 "Chiizu Setup"
 
         field(10; "Last Batch No."; Integer) { }
 
+        field(11; "Setup Completed"; Boolean) { }
+
+        field(12; "CurrentStep"; Integer) { }
     }
 
     keys
