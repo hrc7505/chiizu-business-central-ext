@@ -12,7 +12,14 @@ codeunit 50108 "Chiizu Setup Management"
     begin
         GetSetup(Setup);
 
-        if not Setup."Setup Completed" then
-            Error('Chiizu is not connected. Please complete Chiizu Setup.');
+        if Setup."API Base URL" = '' then
+            Error('Chiizu API Base URL is not configured.');
+
+        if Setup."API Key" = '' then
+            Error('Chiizu API Key is missing.');
+
+        if Setup."Last Verified At" = 0DT then
+            Error('Chiizu is not connected. Please verify connection.');
     end;
+
 }

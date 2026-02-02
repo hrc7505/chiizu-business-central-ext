@@ -40,6 +40,7 @@ page 50101 "Chiizu Assisted Setup"
 
                 trigger OnAction()
                 var
+                    TenantId: Text;
                     ConnectionService: Codeunit "Chiizu Connection Service";
                 begin
                     if Rec."API Base URL" = '' then
@@ -48,14 +49,19 @@ page 50101 "Chiizu Assisted Setup"
                     if Rec."API Key" = '' then
                         Error('API Key is required.');
 
-                    ConnectionService.TestConnection(
-                        Rec."API Base URL",
-                        Rec."API Key"
-                    );
+                    Rec."Remote Tenant Id" := ConnectionService.TestConnection();
+                    Rec."Last Verified At" := CurrentDateTime();
+                    Rec.Modify(true);
 
-                    Message('Connection verified successfully.');
+                    Message('Chiizu connected successfully.');
                 end;
+
             }
         }
     }
+
+    trigger OnOpenPage()
+    begin
+        Rec.Get('SETUP');
+    end;
 }

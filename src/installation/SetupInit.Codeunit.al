@@ -9,8 +9,8 @@ codeunit 50105 "Chiizu Setup Init"
         if not Setup.Get('SETUP') then begin
             Setup.Init();
             Setup."Primary Key" := 'SETUP';
-            Setup."Setup Completed" := false;
-            Setup.Insert();
+            Setup.Insert(true);
         end;
     end;
 }
+

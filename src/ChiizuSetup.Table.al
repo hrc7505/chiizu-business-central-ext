@@ -12,12 +12,14 @@ table 50103 "Chiizu Setup"
 
         field(10; "Last Batch No."; Integer) { }
 
-        field(11; "Setup Completed"; Boolean) { }
-
         field(12; "API Key"; Text[250])
         {
             ExtendedDatatype = Masked;
         }
+
+        field(30; "Last Verified At"; DateTime) { }
+        // returned by Chiizu API
+        field(40; "Remote Tenant Id"; Text[100]) { }
     }
 
     keys

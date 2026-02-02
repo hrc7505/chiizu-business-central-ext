@@ -1,24 +1,22 @@
-codeunit 50120 "Chiizu Connection Service"
+codeunit 50111 "Chiizu Connection Service"
 {
-    procedure TestConnection(BaseUrl: Text; ApiKey: Text)
+    procedure TestConnection(): Code[50]
     var
-        Client: HttpClient;
-        Request: HttpRequestMessage;
-        Response: HttpResponseMessage;
-        Headers: HttpHeaders;
+        ApiClient: Codeunit "Chiizu API Client";
+        Payload: JsonObject;
+        Response: JsonObject;
+        TenantToken: JsonToken;
+        TenantIdTxt: Text;
     begin
-        Request.SetRequestUri(BaseUrl + '/health');
-        Request.Method := 'GET';
+        Payload.Add('ping', true);
 
-        Request.GetHeaders(Headers);
-        Headers.Add('Authorization', 'Bearer ' + ApiKey);
+        Response := ApiClient.PostJson('/connect-chiizu', Payload);
 
-        Client.Send(Request, Response);
+        if not Response.Get('tenantId', TenantToken) then
+            Error('Invalid Chiizu response: tenantId missing.');
 
-        if not Response.IsSuccessStatusCode() then
-            Error(
-                'Failed to connect to Chiizu. Status code: %1',
-                Response.HttpStatusCode()
-            );
+        TenantIdTxt := TenantToken.AsValue().AsText();
+
+        exit(TenantIdTxt);
     end;
 }
