@@ -1,6 +1,6 @@
 codeunit 50111 "Chiizu Connection Service"
 {
-    procedure TestConnection(): Code[50]
+    procedure connect(): Code[50]
     var
         ApiClient: Codeunit "Chiizu API Client";
         Payload: JsonObject;
@@ -18,5 +18,25 @@ codeunit 50111 "Chiizu Connection Service"
         TenantIdTxt := TenantToken.AsValue().AsText();
 
         exit(TenantIdTxt);
+    end;
+
+    procedure disconnect(): Boolean
+    var
+        ApiClient: Codeunit "Chiizu API Client";
+        Payload: JsonObject;
+        Response: JsonObject;
+        isDisconnectedToken: JsonToken;
+        isDisconnected: Boolean;
+    begin
+        Payload.Add('ping', true);
+
+        Response := ApiClient.PostJson('/disconnect-chiizu', Payload);
+
+        if not Response.Get('isDisconnected', isDisconnectedToken) then
+            Error('Invalid Chiizu response: isDisconnected missing.');
+
+        isDisconnected := isDisconnectedToken.AsValue().AsBoolean();
+
+        exit(isDisconnected);
     end;
 }

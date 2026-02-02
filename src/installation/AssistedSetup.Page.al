@@ -37,6 +37,7 @@ page 50101 "Chiizu Assisted Setup"
                 Promoted = true;
                 PromotedCategory = Process;
                 PromotedIsBig = true;
+                Visible = Rec."Remote Tenant Id" = '';
 
                 trigger OnAction()
                 var
@@ -49,11 +50,33 @@ page 50101 "Chiizu Assisted Setup"
                     if Rec."API Key" = '' then
                         Error('API Key is required.');
 
-                    Rec."Remote Tenant Id" := ConnectionService.TestConnection();
+                    Rec."Remote Tenant Id" := ConnectionService.connect();
                     Rec."Last Verified At" := CurrentDateTime();
                     Rec.Modify(true);
 
                     Message('Chiizu connected successfully.');
+                end;
+
+            }
+
+            action(Disconnect)
+            {
+                Caption = 'Disconnect';
+                Image = UnLinkAccount;
+                Promoted = true;
+                PromotedCategory = Process;
+                PromotedIsBig = true;
+                Visible = Rec."Remote Tenant Id" <> '';
+
+                trigger OnAction()
+                var
+                    TenantId: Text;
+                    ConnectionService: Codeunit "Chiizu Connection Service";
+                begin
+                    if ConnectionService.disconnect() then
+                        Rec."Remote Tenant Id" := '';
+                    Rec.Modify(true);
+                    Message('Chiizu disconnected successfully.');
                 end;
 
             }
