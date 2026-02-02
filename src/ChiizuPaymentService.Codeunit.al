@@ -6,6 +6,7 @@ codeunit 50104 "Chiizu Payment Service"
     procedure PayInvoices(SelectedInvoiceNos: List of [Code[20]])
     var
         Setup: Record "Chiizu Setup";
+        SetupMgmt: Codeunit "Chiizu Setup Management";
         PayableVLE: Record "Vendor Ledger Entry";
         Batch: Record "Chiizu Payment Batch";
         UrlHelper: Codeunit "Chiizu Url Helper";
@@ -25,7 +26,7 @@ codeunit 50104 "Chiizu Payment Service"
         if SelectedInvoiceNos.Count() = 0 then
             Error('No invoices selected.');
 
-        GetOrCreateSetup(Setup);
+        SetupMgmt.GetSetup(Setup);
 
         // ✅ Initialize JSON
         Clear(Payload);
@@ -73,8 +74,7 @@ codeunit 50104 "Chiizu Payment Service"
 
         Payload.Add('callbackUrl', UrlHelper.GetPaymentWebhookUrl());
         Payload.Add('batches', BatchesArr);
-
-        ResponseText := CallBulkAPI(Setup, Payload, Setup."API Base URL");
+        ResponseText := CallBulkAPI(Payload, '/create-payment');
         ApplyApiResult(ResponseText);
     end;
 
@@ -114,6 +114,7 @@ codeunit 50104 "Chiizu Payment Service"
     procedure ScheduleInvoices(var TempSchedule: Record "Chiizu Scheduled Payment" temporary): Integer
     var
         Setup: Record "Chiizu Setup";
+        SetupMgmt: Codeunit "Chiizu Setup Management";
         Payload: JsonObject;
         Schedules: JsonArray;
         Obj: JsonObject;
@@ -123,7 +124,7 @@ codeunit 50104 "Chiizu Payment Service"
         if TempSchedule.IsEmpty() then
             Error('No invoices were provided.');
 
-        GetOrCreateSetup(Setup);
+        SetupMgmt.GetSetup(Setup);
         Clear(Payload);
         Clear(Schedules);
 
@@ -145,7 +146,7 @@ codeunit 50104 "Chiizu Payment Service"
         Payload.Add('invoices', Schedules);
         Payload.Add('isScheduled', true);
 
-        ResponseText := CallBulkAPI(Setup, Payload, Setup."API Base URL");
+        ResponseText := CallBulkAPI(Payload, '/create-scheduled-payment');
         ApplyApiResult(ResponseText);
 
         exit(Schedules.Count());
@@ -157,6 +158,7 @@ codeunit 50104 "Chiizu Payment Service"
     procedure CancelScheduledInvoices(SelectedInvoiceNos: List of [Code[20]])
     var
         Setup: Record "Chiizu Setup";
+        SetupMgmt: Codeunit "Chiizu Setup Management";
         InvoiceStatus: Record "Chiizu Invoice Status";
         Payload: JsonObject;
         Invoices: JsonArray;
@@ -171,7 +173,7 @@ codeunit 50104 "Chiizu Payment Service"
         if SelectedInvoiceNos.Count() = 0 then
             Error('No invoices were provided.');
 
-        GetOrCreateSetup(Setup);
+        SetupMgmt.GetSetup(Setup);
         Clear(Payload);
         Clear(Invoices);
 
@@ -211,7 +213,7 @@ codeunit 50104 "Chiizu Payment Service"
         Payload.Add('invoices', Invoices);
         Payload.Add('isCancel', true);
 
-        ResponseText := CallBulkAPI(Setup, Payload, Setup."API Base URL");
+        ResponseText := CallBulkAPI(Payload, '/cancel-scheduled-payment');
         ApplyApiResult(ResponseText);
     end;
 
@@ -267,50 +269,21 @@ codeunit 50104 "Chiizu Payment Service"
         exit(false);
     end;
 
-    local procedure CallBulkAPI(
-    Setup: Record "Chiizu Setup";
-    Payload: JsonObject;
-    Endpoint: Text
-): Text
+    local procedure CallBulkAPI(Payload: JsonObject; Endpoint: Text): Text
     var
-        Client: HttpClient;
-        Request: HttpRequestMessage;
-        Response: HttpResponseMessage;
-        Content: HttpContent;
-        Headers: HttpHeaders;
-        BodyText: Text;
+        ChiizuApiClient: Codeunit "Chiizu API Client";
+        ResponseJson: JsonObject;
         ResponseText: Text;
     begin
-        // Serialize payload
-        Payload.WriteTo(BodyText);
-        Content.WriteFrom(BodyText);
+        // -----------------------------
+        // Delegate HTTP + auth to client
+        // -----------------------------
+        ResponseJson := ChiizuApiClient.PostJson(Endpoint, Payload);
 
-        // Content headers
-        Content.GetHeaders(Headers);
-        Headers.Clear();
-        Headers.Add('Content-Type', 'application/json');
-
-        // Request
-        Request.Method := 'POST';
-        Request.SetRequestUri(Endpoint);
-        Request.Content := Content;
-
-        // 🔑 REQUEST headers (THIS IS THE KEY)
-        Request.GetHeaders(Headers);
-        Headers.Add('Authorization', 'Bearer {PASS_TOKEN_HERE}');
-
-        // Send
-        if not Client.Send(Request, Response) then
-            Error('Failed to call Chiizu API.');
-
-        Response.Content.ReadAs(ResponseText);
-
-        if not Response.IsSuccessStatusCode() then
-            Error(
-                'Chiizu request failed. Status: %1 Response: %2',
-                Response.HttpStatusCode(),
-                ResponseText
-            );
+        // -----------------------------
+        // Convert JSON → Text (bulk APIs usually log/store text)
+        // -----------------------------
+        ResponseJson.WriteTo(ResponseText);
 
         exit(ResponseText);
     end;
@@ -319,8 +292,9 @@ codeunit 50104 "Chiizu Payment Service"
     local procedure CreateBatchId(): Code[20]
     var
         Setup: Record "Chiizu Setup";
+        SetupMgmt: Codeunit "Chiizu Setup Management";
     begin
-        GetOrCreateSetup(Setup);
+        SetupMgmt.GetSetup(Setup);
 
         Setup."Last Batch No." += 1;
         Setup.Modify(true);
@@ -331,14 +305,5 @@ codeunit 50104 "Chiizu Payment Service"
             '-' +
             PadStr(Format(Setup."Last Batch No."), 6, '0')
         );
-    end;
-
-    local procedure GetOrCreateSetup(var Setup: Record "Chiizu Setup")
-    begin
-        if not Setup.Get('CHIIZU') then begin
-            Setup.Init();
-            Setup."Primary Key" := 'CHIIZU';
-            Setup.Insert(true);
-        end;
     end;
 }
