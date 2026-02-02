@@ -3,7 +3,7 @@ codeunit 50104 "Chiizu Payment Service"
     // --------------------------
     // BULK PAYMENT
     // --------------------------
-    procedure PayInvoices(SelectedInvoiceNos: List of [Code[20]])
+    procedure PayInvoices(SelectedInvoiceNos: List of [Code[20]]; BankAccountNo: Code[20])
     var
         Setup: Record "Chiizu Setup";
         SetupMgmt: Codeunit "Chiizu Setup Management";
@@ -22,16 +22,21 @@ codeunit 50104 "Chiizu Payment Service"
         Amount: Decimal;
         i: Integer;
         ResponseText: Text;
+        BankAccountRec: Record "Bank Account";
     begin
         if SelectedInvoiceNos.Count() = 0 then
             Error('No invoices selected.');
 
         SetupMgmt.GetSetup(Setup);
 
-        // ✅ Initialize JSON
+        // Validate bank account
+        if not BankAccountRec.Get(BankAccountNo) then
+            Error('Bank account %1 not found.', BankAccountNo);
+
         Clear(Payload);
         Clear(BatchesArr);
 
+        // Loop through selected invoices and create batches
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
@@ -43,7 +48,7 @@ codeunit 50104 "Chiizu Payment Service"
 
             BatchId := CreateBatchId();
 
-            // ---- Create Batch ----
+            // ---- Create Batch in BC ----
             Batch.Init();
             Batch."Batch Id" := BatchId;
             Batch."Vendor No." := PayableVLE."Vendor No.";
@@ -52,13 +57,12 @@ codeunit 50104 "Chiizu Payment Service"
             Batch.Status := Batch.Status::Open;
             Batch.Insert(true);
 
-            // 🔑 LINK invoice to batch (status still Open)
+            // Link invoice to batch
             LinkInvoiceToBatch(InvNo, BatchId);
 
             // ---- Invoice JSON ----
             Clear(InvoicesArr);
             Clear(InvoiceObj);
-
             InvoiceObj.Add('invoiceNo', InvNo);
             InvoiceObj.Add('amount', Amount);
             InvoicesArr.Add(InvoiceObj);
@@ -72,8 +76,12 @@ codeunit 50104 "Chiizu Payment Service"
             BatchesArr.Add(BatchObj);
         end;
 
+        // ---- Final Payload ----
         Payload.Add('callbackUrl', UrlHelper.GetPaymentWebhookUrl());
+        Payload.Add('bankAccountNo', BankAccountNo); // common bank account for all batches
         Payload.Add('batches', BatchesArr);
+
+        // ---- Send to Chiizu API ----
         ResponseText := CallBulkAPI(Payload, '/create-payment');
         ApplyApiResult(ResponseText);
     end;
