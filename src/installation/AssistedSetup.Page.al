@@ -12,7 +12,6 @@ page 50101 "Chiizu Assisted Setup"
             group(Connection)
             {
                 Caption = 'Connection';
-                Visible = CurrentStep = 1;
 
                 field("API Base URL"; Rec."API Base URL")
                 {
@@ -22,17 +21,6 @@ page 50101 "Chiizu Assisted Setup"
                 field("API Key"; Rec."API Key")
                 {
                     ApplicationArea = All;
-                }
-            }
-
-            group(FinishGroup)
-            {
-                Caption = 'Finish';
-                Visible = CurrentStep = 2;
-
-                label(DoneLbl)
-                {
-                    Caption = 'Setup is ready to complete.';
                 }
             }
         }
@@ -45,11 +33,14 @@ page 50101 "Chiizu Assisted Setup"
             action(Connect)
             {
                 Caption = 'Connect';
+                Image = Link;
                 Promoted = true;
+                PromotedCategory = Process;
+                PromotedIsBig = true;
 
                 trigger OnAction()
                 var
-                    GuidedExperience: Codeunit "Guided Experience";
+                    ConnectionService: Codeunit "Chiizu Connection Service";
                 begin
                     if Rec."API Base URL" = '' then
                         Error('API Base URL is required.');
@@ -57,39 +48,14 @@ page 50101 "Chiizu Assisted Setup"
                     if Rec."API Key" = '' then
                         Error('API Key is required.');
 
-                    // Test connection here
-
-                    Rec."Setup Completed" := true;
-                    Rec.Modify(true);
-
-                    GuidedExperience.CompleteAssistedSetup(
-                        ObjectType::Page,
-                        Page::"Chiizu Assisted Setup"
+                    ConnectionService.TestConnection(
+                        Rec."API Base URL",
+                        Rec."API Key"
                     );
 
-                    Message('Chiizu connected successfully.');
-                    CurrPage.Close();
+                    Message('Connection verified successfully.');
                 end;
             }
-
         }
     }
-
-    var
-        CurrentStep: Integer;
-
-    trigger OnInit()
-    begin
-        if not Rec.Get('SETUP') then begin
-            Rec.Init();
-            Rec."Primary Key" := 'SETUP';
-            Rec.Insert(true);
-        end;
-    end;
-
-    trigger OnOpenPage()
-    begin
-        if CurrentStep = 0 then
-            CurrentStep := 1;
-    end;
 }
