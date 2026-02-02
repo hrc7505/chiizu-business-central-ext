@@ -6,6 +6,7 @@ codeunit 50104 "Chiizu Payment Service"
     procedure PayInvoices(SelectedInvoiceNos: List of [Code[20]])
     var
         Setup: Record "Chiizu Setup";
+        SetupMgmt: Codeunit "Chiizu Setup Management";
         PayableVLE: Record "Vendor Ledger Entry";
         Batch: Record "Chiizu Payment Batch";
         UrlHelper: Codeunit "Chiizu Url Helper";
@@ -25,7 +26,7 @@ codeunit 50104 "Chiizu Payment Service"
         if SelectedInvoiceNos.Count() = 0 then
             Error('No invoices selected.');
 
-        GetOrCreateSetup(Setup);
+        SetupMgmt.GetSetup(Setup);
 
         // ✅ Initialize JSON
         Clear(Payload);
@@ -73,7 +74,6 @@ codeunit 50104 "Chiizu Payment Service"
 
         Payload.Add('callbackUrl', UrlHelper.GetPaymentWebhookUrl());
         Payload.Add('batches', BatchesArr);
-
         ResponseText := CallBulkAPI(Setup, Payload, Setup."API Base URL");
         ApplyApiResult(ResponseText);
     end;
@@ -114,6 +114,7 @@ codeunit 50104 "Chiizu Payment Service"
     procedure ScheduleInvoices(var TempSchedule: Record "Chiizu Scheduled Payment" temporary): Integer
     var
         Setup: Record "Chiizu Setup";
+        SetupMgmt: Codeunit "Chiizu Setup Management";
         Payload: JsonObject;
         Schedules: JsonArray;
         Obj: JsonObject;
@@ -123,7 +124,7 @@ codeunit 50104 "Chiizu Payment Service"
         if TempSchedule.IsEmpty() then
             Error('No invoices were provided.');
 
-        GetOrCreateSetup(Setup);
+        SetupMgmt.GetSetup(Setup);
         Clear(Payload);
         Clear(Schedules);
 
@@ -157,6 +158,7 @@ codeunit 50104 "Chiizu Payment Service"
     procedure CancelScheduledInvoices(SelectedInvoiceNos: List of [Code[20]])
     var
         Setup: Record "Chiizu Setup";
+        SetupMgmt: Codeunit "Chiizu Setup Management";
         InvoiceStatus: Record "Chiizu Invoice Status";
         Payload: JsonObject;
         Invoices: JsonArray;
@@ -171,7 +173,7 @@ codeunit 50104 "Chiizu Payment Service"
         if SelectedInvoiceNos.Count() = 0 then
             Error('No invoices were provided.');
 
-        GetOrCreateSetup(Setup);
+        SetupMgmt.GetSetup(Setup);
         Clear(Payload);
         Clear(Invoices);
 
@@ -319,8 +321,9 @@ codeunit 50104 "Chiizu Payment Service"
     local procedure CreateBatchId(): Code[20]
     var
         Setup: Record "Chiizu Setup";
+        SetupMgmt: Codeunit "Chiizu Setup Management";
     begin
-        GetOrCreateSetup(Setup);
+        SetupMgmt.GetSetup(Setup);
 
         Setup."Last Batch No." += 1;
         Setup.Modify(true);
@@ -331,14 +334,5 @@ codeunit 50104 "Chiizu Payment Service"
             '-' +
             PadStr(Format(Setup."Last Batch No."), 6, '0')
         );
-    end;
-
-    local procedure GetOrCreateSetup(var Setup: Record "Chiizu Setup")
-    begin
-        if not Setup.Get('CHIIZU') then begin
-            Setup.Init();
-            Setup."Primary Key" := 'CHIIZU';
-            Setup.Insert(true);
-        end;
     end;
 }
