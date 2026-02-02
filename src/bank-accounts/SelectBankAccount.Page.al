@@ -1,6 +1,6 @@
 page 50106 "Chiizu Select Bank Account"
 {
-    PageType = Card;
+    PageType = StandardDialog;
     ApplicationArea = All;
     Caption = 'Select Bank Account';
 
@@ -11,39 +11,36 @@ page 50106 "Chiizu Select Bank Account"
             group(BankSelection)
             {
                 Caption = 'Bank Account to Use';
-                field("Bank Account No."; SelectedBankAccountNo)
-                {
-                    TableRelation = "Bank Account"."No.";
-                    ApplicationArea = All;
-                    Caption = 'Bank Account';
-                }
-            }
-        }
-    }
 
-    actions
-    {
-        area(processing)
-        {
-            action(OK)
-            {
-                Caption = 'OK';
-                Promoted = true;
-                PromotedCategory = Process;
-                trigger OnAction()
-                begin
-                    CurrPage.Close();
-                end;
+                field(BankAccountNo; SelectedBankAccountNo)
+                {
+                    Caption = 'Bank Account';
+                    ApplicationArea = All;
+                    TableRelation = "Bank Account"."No.";
+                }
             }
         }
     }
 
     var
         SelectedBankAccountNo: Code[20];
+        WasConfirmed: Boolean;
 
-    procedure SetInvoices(InvoiceNos: List of [Code[20]])
+    trigger OnQueryClosePage(CloseAction: Action): Boolean
     begin
-        // Optional: store invoices to show summary
+        if CloseAction = Action::OK then begin
+            if SelectedBankAccountNo = '' then
+                Error('Please select a bank account.');
+
+            WasConfirmed := true;
+        end;
+
+        exit(true);
+    end;
+
+    procedure IsConfirmed(): Boolean
+    begin
+        exit(WasConfirmed);
     end;
 
     procedure GetSelectedBankAccount(): Code[20]
