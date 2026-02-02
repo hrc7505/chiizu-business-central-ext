@@ -5,11 +5,11 @@ codeunit 50103 "Chiizu Setup Guard"
         Setup: Record "Chiizu Setup";
     begin
         if not Setup.Get('SETUP') then
-            Error('Chiizu setup is not initialized.');
+            exit;
 
-        if not Setup."Setup Completed" then begin
-            Page.RunModal(Page::"Chiizu Setup Wizard");
-            // Error('Please complete Chiizu setup first.');
-        end;
+        // Only suggest setup, do not enforce it
+        if not Setup."Setup Completed" then
+            Page.Run(Page::"Chiizu Assisted Setup");
     end;
+
 }

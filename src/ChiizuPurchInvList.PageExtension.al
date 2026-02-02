@@ -204,14 +204,6 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
         UpdateSelectionState();
     end;
 
-    trigger OnOpenPage()
-    var
-        ChiizuSetupGuard: Codeunit "Chiizu Setup Guard";
-    begin
-        ChiizuSetupGuard.EnsureSetupCompleted();
-    end;
-
-
     local procedure UpdateSelectionState()
     var
         SelInv: Record "Purch. Inv. Header";

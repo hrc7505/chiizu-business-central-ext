@@ -14,7 +14,10 @@ table 50103 "Chiizu Setup"
 
         field(11; "Setup Completed"; Boolean) { }
 
-        field(12; "CurrentStep"; Integer) { }
+        field(12; "API Key"; Text[250])
+        {
+            ExtendedDatatype = Masked;
+        }
     }
 
     keys
