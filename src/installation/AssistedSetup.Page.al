@@ -22,6 +22,13 @@ page 50101 "Chiizu Assisted Setup"
                 {
                     ApplicationArea = All;
                 }
+
+                field("Last Verified At"; Rec."Last Verified At")
+                {
+                    Caption = 'Last Connected At';
+                    ApplicationArea = All;
+                    Editable = false;
+                }
             }
         }
     }
