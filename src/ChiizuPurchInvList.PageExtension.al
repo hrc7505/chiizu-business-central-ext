@@ -56,6 +56,9 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                             SelectedInvoiceNos.Add(PurchHeader."No.");
                         until PurchHeader.Next() = 0;
 
+                    // ✅ EARLY VALIDATION
+                    PaymentService.ValidateInvoicesForPayment(SelectedInvoiceNos);
+
                     // 1️⃣ Bank selection
                     if SelectBankPage.RunModal() <> Action::OK then
                         exit;

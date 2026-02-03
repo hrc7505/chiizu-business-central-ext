@@ -10,6 +10,7 @@ codeunit 50104 "Chiizu Payment Service"
         PayableVLE: Record "Vendor Ledger Entry";
         Batch: Record "Chiizu Payment Batch";
         UrlHelper: Codeunit "Chiizu Url Helper";
+        BankAccountRec: Record "Bank Account";
 
         Payload: JsonObject;
         BatchesArr: JsonArray;
@@ -22,33 +23,29 @@ codeunit 50104 "Chiizu Payment Service"
         Amount: Decimal;
         i: Integer;
         ResponseText: Text;
-        BankAccountRec: Record "Bank Account";
     begin
-        if SelectedInvoiceNos.Count() = 0 then
-            Error('No invoices selected.');
-
         SetupMgmt.GetSetup(Setup);
 
-        // Validate bank account
+        // 🔒 Defensive validation (execution safety)
         if not BankAccountRec.Get(BankAccountNo) then
             Error('Bank account %1 not found.', BankAccountNo);
 
         Clear(Payload);
         Clear(BatchesArr);
 
-        // Loop through selected invoices and create batches
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
+            // 🔑 Resolve ledger entry (NOT validation)
             if not ResolvePayableVLE(InvNo, PayableVLE) then
-                Error('No payable vendor ledger entry for invoice %1.', InvNo);
+                Error('Invoice %1 cannot be processed.', InvNo);
 
             PayableVLE.CalcFields("Remaining Amount");
             Amount := Abs(PayableVLE."Remaining Amount");
 
             BatchId := CreateBatchId();
 
-            // ---- Create Batch in BC ----
+            // ---- Create Batch (BC side) ----
             Batch.Init();
             Batch."Batch Id" := BatchId;
             Batch."Vendor No." := PayableVLE."Vendor No.";
@@ -78,10 +75,9 @@ codeunit 50104 "Chiizu Payment Service"
 
         // ---- Final Payload ----
         Payload.Add('callbackUrl', UrlHelper.GetPaymentWebhookUrl());
-        Payload.Add('bankAccountNo', BankAccountNo); // common bank account for all batches
+        Payload.Add('bankAccountNo', BankAccountNo);
         Payload.Add('batches', BatchesArr);
 
-        // ---- Send to Chiizu API ----
         ResponseText := CallBulkAPI(Payload, '/create-payment');
         ApplyApiResult(ResponseText);
     end;
@@ -313,5 +309,36 @@ codeunit 50104 "Chiizu Payment Service"
             '-' +
             PadStr(Format(Setup."Last Batch No."), 6, '0')
         );
+    end;
+
+    procedure ValidateInvoicesForPayment(SelectedInvoiceNos: List of [Code[20]])
+    var
+        PayableVLE: Record "Vendor Ledger Entry";
+        InvoiceStatus: Record "Chiizu Invoice Status";
+        InvNo: Code[20];
+        i: Integer;
+    begin
+        if SelectedInvoiceNos.Count() = 0 then
+            Error('No invoices selected.');
+
+        for i := 1 to SelectedInvoiceNos.Count() do begin
+            InvNo := SelectedInvoiceNos.Get(i);
+
+            // ❌ Block invoices already under Chiizu processing
+            if InvoiceStatus.Get(InvNo) then
+                if InvoiceStatus.Status = InvoiceStatus.Status::Processing then
+                    Error(
+                        'Invoice %1 is already under payment processing by Chiizu.',
+                        InvNo
+                    );
+
+            // ✅ Ledger validation
+            if not ResolvePayableVLE(InvNo, PayableVLE) then
+                Error('Invoice %1 is not payable or already closed.', InvNo);
+
+            PayableVLE.CalcFields("Remaining Amount");
+            if PayableVLE."Remaining Amount" = 0 then
+                Error('Invoice %1 has no remaining amount.');
+        end;
     end;
 }
