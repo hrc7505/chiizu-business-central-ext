@@ -29,21 +29,6 @@ table 50110 "Chiizu Invoice Status"
             end;
         }
 
-        /* field(3; "Vendor No."; Code[20])
-        {
-            DataClassification = CustomerContent;
-        }
-
-        field(4; Amount; Decimal)
-        {
-            DataClassification = CustomerContent;
-        }
-
-        field(5; "Entry No."; Integer)
-        {
-            DataClassification = SystemMetadata;
-        }
- */
         // For scheduled payments
         field(6; "Scheduled Date"; Date)
         {

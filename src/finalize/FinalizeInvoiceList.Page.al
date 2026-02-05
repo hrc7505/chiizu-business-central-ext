@@ -3,7 +3,12 @@ page 50108 "Chiizu Finalize Invoice List"
     PageType = ListPart;
     SourceTable = "Purch. Inv. Header";
     ApplicationArea = All;
+
+    SourceTableTemporary = true;
     Editable = false;
+    InsertAllowed = false;
+    ModifyAllowed = false;
+    DeleteAllowed = false;
 
     layout
     {
@@ -19,18 +24,52 @@ page 50108 "Chiizu Finalize Invoice List"
         }
     }
 
+    actions
+    {
+        area(Processing)
+        {
+            action(RemoveFromList)
+            {
+                Caption = 'Delete Invoice';
+                Image = Delete;
+
+                trigger OnAction()
+                begin
+                    Rec.CalcFields("Remaining Amount");
+                    TotalAmount -= Abs(Rec."Remaining Amount");
+
+                    Rec.Delete();
+                    CurrPage.Update(true);
+                end;
+            }
+        }
+    }
+
+    var
+        TotalAmount: Decimal;
+
+    procedure GetTotalAmount(): Decimal
+    begin
+        exit(TotalAmount);
+    end;
+
     procedure SetInvoices(InvoiceNos: List of [Code[20]])
     var
-        FilterTxt: Text;
+        PurchInvHeader: Record "Purch. Inv. Header";
         i: Integer;
     begin
         Rec.Reset();
+        Rec.DeleteAll();
+        TotalAmount := 0;
 
-        for i := 1 to InvoiceNos.Count() do
-            FilterTxt += InvoiceNos.Get(i) + '|';
+        for i := 1 to InvoiceNos.Count() do begin
+            PurchInvHeader.Get(InvoiceNos.Get(i));
+            PurchInvHeader.CalcFields("Remaining Amount");
 
-        FilterTxt := DelChr(FilterTxt, '>', '|');
+            Rec := PurchInvHeader;
+            Rec.Insert();
 
-        Rec.SetFilter("No.", FilterTxt);
+            TotalAmount += Abs(PurchInvHeader."Remaining Amount");
+        end;
     end;
 }

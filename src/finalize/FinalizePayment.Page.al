@@ -40,11 +40,17 @@ page 50107 "Chiizu Finalize Payment"
                 }
             }
 
-            part(Invoices; "Chiizu Finalize Invoice List")
+            group(InvoicesGroup)
             {
                 Caption = 'Invoices to Pay';
-                ApplicationArea = All;
+
+
+                part(Invoices; "Chiizu Finalize Invoice List")
+                {
+                    ApplicationArea = All;
+                }
             }
+
         }
     }
 
@@ -77,34 +83,29 @@ page 50107 "Chiizu Finalize Payment"
         TotalAmount: Decimal;
         BankAccountName: Text[100];
 
+    trigger OnOpenPage()
+    begin
+        CurrPage.Invoices.Page.SetInvoices(InvoiceNos);
+        TotalAmount := CurrPage.Invoices.Page.GetTotalAmount();
+    end;
+
+
+    trigger OnAfterGetCurrRecord()
+    begin
+        TotalAmount := CurrPage.Invoices.Page.GetTotalAmount();
+    end;
+
     procedure SetContext(Invoices: List of [Code[20]]; BankAccNo: Code[20]; BankAccName: Text[100])
     begin
         InvoiceNos := Invoices;
         BankAccountNo := BankAccNo;
         BankAccountName := BankAccName;
-        CalculateTotal();
     end;
 
-    local procedure CalculateTotal()
-    var
-        VLE: Record "Vendor Ledger Entry";
-        i: Integer;
+    procedure RefreshTotalFromInvoices()
     begin
-        TotalAmount := 0;
-
-        for i := 1 to InvoiceNos.Count() do begin
-            VLE.SetRange("Document No.", InvoiceNos.Get(i));
-            VLE.SetRange(Open, true);
-            if VLE.FindFirst() then begin
-                VLE.CalcFields("Remaining Amount");
-                TotalAmount += Abs(VLE."Remaining Amount");
-            end;
-        end;
+        TotalAmount := CurrPage.Invoices.Page.GetTotalAmount();
+        CurrPage.Update(false);
     end;
 
-    trigger OnOpenPage()
-    begin
-        // Push selected invoices into subpage AFTER page is created
-        CurrPage.Invoices.Page.SetInvoices(InvoiceNos);
-    end;
 }

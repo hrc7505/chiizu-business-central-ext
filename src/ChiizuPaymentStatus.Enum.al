@@ -23,11 +23,6 @@ enum 50111 "Chiizu Payment Status"
         Caption = 'Processing'; // External payment in progress
     }
 
-    value(3; ExternalPaid)
-    {
-        Caption = 'External Paid'; // Money captured, BC not yet posted
-    }
-
     // ===== BC-derived outcomes =====
     value(4; Paid)
     {
