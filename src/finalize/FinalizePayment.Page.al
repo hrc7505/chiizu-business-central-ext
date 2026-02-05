@@ -27,9 +27,23 @@ page 50107 "Chiizu Finalize Payment"
 
                 field(BankAccountNo; BankAccountNo)
                 {
-                    Caption = 'Bank Account No.';
+                    Caption = 'Bank Account';
                     ApplicationArea = All;
-                    Editable = false;
+                    TableRelation = "Bank Account"."No.";
+
+                    trigger OnValidate()
+                    var
+                        BankAcc: Record "Bank Account";
+                    begin
+                        Clear(BankAccountName);
+
+                        if BankAccountNo <> '' then begin
+                            if BankAcc.Get(BankAccountNo) then
+                                BankAccountName := BankAcc.Name
+                            else
+                                Error('Bank account not found: %1', BankAccountNo);
+                        end;
+                    end;
                 }
 
                 field(BankAccountName; BankAccountName)
@@ -63,7 +77,11 @@ page 50107 "Chiizu Finalize Payment"
                 var
                     PaymentService: Codeunit "Chiizu Payment Service";
                 begin
+                    if BankAccountNo = '' then
+                        Error('Please select a bank account before proceeding.');
+
                     PaymentService.PayInvoices(InvoiceNos, BankAccountNo);
+
                     Message('%1 invoice(s) sent to Chiizu for processing.', InvoiceNos.Count());
                     CurrPage.Close();
                 end;
@@ -77,11 +95,9 @@ page 50107 "Chiizu Finalize Payment"
         TotalAmount: Decimal;
         BankAccountName: Text[100];
 
-    procedure SetContext(Invoices: List of [Code[20]]; BankAccNo: Code[20]; BankAccName: Text[100])
+    procedure SetContext(Invoices: List of [Code[20]])
     begin
         InvoiceNos := Invoices;
-        BankAccountNo := BankAccNo;
-        BankAccountName := BankAccName;
         CalculateTotal();
     end;
 

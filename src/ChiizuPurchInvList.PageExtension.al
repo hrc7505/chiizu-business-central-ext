@@ -43,7 +43,6 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                     PaymentService: Codeunit "Chiizu Payment Service";
                     PurchHeader: Record "Purch. Inv. Header";
                     SelectedInvoiceNos: List of [Code[20]];
-                    SelectBankPage: Page "Chiizu Select Bank Account";
                     FinalizePage: Page "Chiizu Finalize Payment";
                 begin
                     CurrPage.SetSelectionFilter(PurchHeader);
@@ -59,12 +58,8 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                     // ✅ EARLY VALIDATION
                     PaymentService.ValidateInvoicesForPayment(SelectedInvoiceNos);
 
-                    // 1️⃣ Bank selection
-                    if SelectBankPage.RunModal() <> Action::OK then
-                        exit;
-
                     // 2️⃣ Final review
-                    FinalizePage.SetContext(SelectedInvoiceNos, SelectBankPage.GetSelectedBankAccountNo(), SelectBankPage.GetSelectedBankAccountName());
+                    FinalizePage.SetContext(SelectedInvoiceNos);
                     FinalizePage.RunModal();
                 end;
             }
