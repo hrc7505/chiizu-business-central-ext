@@ -115,45 +115,57 @@ codeunit 50104 "Chiizu Payment Service"
     // --------------------------
     // BULK SCHEDULING
     // --------------------------
-    procedure ScheduleInvoices(var TempSchedule: Record "Chiizu Scheduled Payment" temporary): Integer
+    procedure ScheduleInvoicesFromFinalize(
+        SelectedInvoiceNos: List of [Code[20]];
+        BankAccountNo: Code[20];
+        ScheduledDate: Date
+    )
     var
-        Setup: Record "Chiizu Setup";
-        SetupMgmt: Codeunit "Chiizu Setup Management";
-        Payload: JsonObject;
-        Schedules: JsonArray;
-        Obj: JsonObject;
-        ResponseText: Text;
+        PayableVLE: Record "Vendor Ledger Entry";
+        Scheduled: Record "Chiizu Scheduled Payment";
+        InvoiceStatus: Record "Chiizu Invoice Status";
+        InvNo: Code[20];
+        Amount: Decimal;
+        i: Integer;
     begin
-        TempSchedule.Reset();
-        if TempSchedule.IsEmpty() then
-            Error('No invoices were provided.');
+        if SelectedInvoiceNos.Count() = 0 then
+            Error('No invoices selected.');
 
-        SetupMgmt.GetSetup(Setup);
-        Clear(Payload);
-        Clear(Schedules);
+        if ScheduledDate < Today then
+            Error('Scheduled date must be today or later.');
 
-        if TempSchedule.FindSet() then
-            repeat
-                Clear(Obj);
-                Obj.Add('invoiceNo', TempSchedule."Invoice No.");
-                Obj.Add('vendorNo', TempSchedule."Vendor No.");
-                Obj.Add('amount', TempSchedule.Amount);
-                Obj.Add(
-                    'scheduledDate',
-                    Format(TempSchedule."Scheduled Date", 0, '<Year4>-<Month,2>-<Day,2>')
-                );
+        // Reuse your existing validations
+        ValidateInvoicesForPayment(SelectedInvoiceNos);
 
-                Schedules.Add(Obj);
-            until TempSchedule.Next() = 0;
+        for i := 1 to SelectedInvoiceNos.Count() do begin
+            InvNo := SelectedInvoiceNos.Get(i);
 
-        Payload.Add('batchId', CreateBatchId());
-        Payload.Add('invoices', Schedules);
-        Payload.Add('isScheduled', true);
+            if not ResolvePayableVLE(InvNo, PayableVLE) then
+                Error('Invoice %1 is not payable.', InvNo);
 
-        ResponseText := CallBulkAPI(Payload, '/create-scheduled-payment');
-        ApplyApiResult(ResponseText);
+            PayableVLE.CalcFields("Remaining Amount");
+            Amount := Abs(PayableVLE."Remaining Amount");
 
-        exit(Schedules.Count());
+            // 🔑 CRITICAL: never copy Entry No.
+            Scheduled.Init();
+            Scheduled."Invoice No." := InvNo;
+            Scheduled."Vendor No." := PayableVLE."Vendor No.";
+            Scheduled.Amount := Amount;
+            Scheduled."Scheduled Date" := ScheduledDate;
+            Scheduled.Status := Scheduled.Status::Scheduled;
+            Scheduled.Insert(true); // AutoIncrement fires here
+
+            // Optional: status bridge
+            if not InvoiceStatus.Get(InvNo) then begin
+                InvoiceStatus.Init();
+                InvoiceStatus."Invoice No." := InvNo;
+                InvoiceStatus.Insert(true);
+            end;
+
+            InvoiceStatus.Status := InvoiceStatus.Status::Scheduled;
+            InvoiceStatus."Last Updated At" := CurrentDateTime();
+            InvoiceStatus.Modify(true);
+        end;
     end;
 
     // --------------------------
@@ -325,12 +337,19 @@ codeunit 50104 "Chiizu Payment Service"
             InvNo := SelectedInvoiceNos.Get(i);
 
             // ❌ Block invoices already under Chiizu processing
-            if InvoiceStatus.Get(InvNo) then
+            if InvoiceStatus.Get(InvNo) then begin
                 if InvoiceStatus.Status = InvoiceStatus.Status::Processing then
                     Error(
                         'Invoice %1 is already under payment processing by Chiizu.',
                         InvNo
                     );
+
+                if InvoiceStatus.Status = InvoiceStatus.Status::Scheduled then
+                    Error(
+                        'Invoice %1 is already scheduled for payment by Chiizu.',
+                        InvNo
+                    );
+            end;
 
             // ✅ Ledger validation
             if not ResolvePayableVLE(InvNo, PayableVLE) then
@@ -341,4 +360,37 @@ codeunit 50104 "Chiizu Payment Service"
                 Error('Invoice %1 has no remaining amount.');
         end;
     end;
+
+    procedure BuildTempSchedulePreview(SelectedInvoiceNos: List of [Code[20]]; var TempSchedule: Record "Chiizu Scheduled Payment" temporary)
+    var
+        PayableVLE: Record "Vendor Ledger Entry";
+        InvNo: Code[20];
+        i: Integer;
+    begin
+        TempSchedule.Reset();
+        TempSchedule.DeleteAll(); // safe – temp only
+
+        if SelectedInvoiceNos.Count() = 0 then
+            exit;
+
+        for i := 1 to SelectedInvoiceNos.Count() do begin
+            InvNo := SelectedInvoiceNos.Get(i);
+
+            if not ResolvePayableVLE(InvNo, PayableVLE) then
+                continue;
+
+            PayableVLE.CalcFields("Remaining Amount");
+            if PayableVLE."Remaining Amount" = 0 then
+                continue;
+
+            TempSchedule.Init();
+            // 🚫 DO NOT TOUCH Entry No.
+            TempSchedule."Invoice No." := InvNo;
+            TempSchedule."Vendor No." := PayableVLE."Vendor No.";
+            TempSchedule.Amount := Abs(PayableVLE."Remaining Amount");
+            TempSchedule.Status := TempSchedule.Status::Open;
+            TempSchedule.Insert(); // temp insert only
+        end;
+    end;
+
 }

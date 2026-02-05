@@ -59,7 +59,7 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                     PaymentService.ValidateInvoicesForPayment(SelectedInvoiceNos);
 
                     // 2️⃣ Final review
-                    FinalizePage.SetContext(SelectedInvoiceNos);
+                    FinalizePage.SetContext(SelectedInvoiceNos, "Chiizu Finalize Mode"::Pay);
                     FinalizePage.RunModal();
                 end;
             }
@@ -80,9 +80,10 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                 var
                     PurchHeader: Record "Purch. Inv. Header";
                     SelectedInvoiceNos: List of [Code[20]];
-                    SchedulePage: Page "Chiizu Schedule Payment";
                     InvoiceStatus: Record "Chiizu Invoice Status";
                     Status: Enum "Chiizu Payment Status";
+                    FinalizePage: Page "Chiizu Finalize Payment";
+                    PaymentService: Codeunit "Chiizu Payment Service";
                 begin
                     CurrPage.SetSelectionFilter(PurchHeader);
 
@@ -109,8 +110,11 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                             SelectedInvoiceNos.Add(PurchHeader."No.");
                         until PurchHeader.Next() = 0;
 
-                    SchedulePage.SetSelectedInvoices(SelectedInvoiceNos);
-                    SchedulePage.RunModal();
+                    // ✅ EARLY VALIDATION
+                    PaymentService.ValidateInvoicesForPayment(SelectedInvoiceNos);
+
+                    FinalizePage.SetContext(SelectedInvoiceNos, "Chiizu Finalize Mode"::Schedule);
+                    FinalizePage.RunModal();
                 end;
             }
 
