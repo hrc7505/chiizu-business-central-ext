@@ -7,6 +7,7 @@ table 50121 "Chiizu Scheduled Payment"
         field(1; "Entry No."; Integer)
         {
             AutoIncrement = true;
+            DataClassification = SystemMetadata;
         }
 
         field(2; "Invoice No."; Code[20]) { }

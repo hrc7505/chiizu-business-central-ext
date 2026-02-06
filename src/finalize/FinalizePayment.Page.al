@@ -54,7 +54,7 @@ page 50107 "Chiizu Finalize Payment"
                 }
             }
 
-            group(ScheduleGroup)
+            group(ScheduleInfo)
             {
                 Caption = 'Schedule Payment';
                 Visible = FinalizeMode = FinalizeMode::Schedule;
@@ -84,8 +84,9 @@ page 50107 "Chiizu Finalize Payment"
     {
         area(processing)
         {
-            action(ConfirmPayment)
+            action(ConfirmPay)
             {
+                Caption = 'Confirm & Pay';
                 Image = Payment;
                 Promoted = true;
                 PromotedCategory = Process;
@@ -98,28 +99,9 @@ page 50107 "Chiizu Finalize Payment"
                     if BankAccountNo = '' then
                         Error('Please select a bank account.');
 
-                    case FinalizeMode of
-                        FinalizeMode::Pay:
-                            begin
-                                PaymentService.PayInvoices(InvoiceNos, BankAccountNo);
-                                Message('%1 invoice(s) sent for payment.', InvoiceNos.Count());
-                            end;
+                    PaymentService.PayInvoices(InvoiceNos, BankAccountNo);
 
-                        FinalizeMode::Schedule:
-                            begin
-                                if ScheduledDate = 0D then
-                                    Error('Please select a scheduled date.');
-
-                                PaymentService.ScheduleInvoicesFromFinalize(
-                                    InvoiceNos,
-                                    BankAccountNo,
-                                    ScheduledDate
-                                );
-
-                                Message('%1 invoice(s) scheduled successfully.', InvoiceNos.Count());
-                            end;
-                    end;
-
+                    Message('%1 invoice(s) sent for payment.', InvoiceNos.Count());
                     CurrPage.Close();
                 end;
             }
@@ -139,8 +121,8 @@ page 50107 "Chiizu Finalize Payment"
                     if BankAccountNo = '' then
                         Error('Please select a bank account.');
 
-                    if ScheduledDate < Today then
-                        Error('Scheduled date must be today or later.');
+                    if ScheduledDate = 0D then
+                        Error('Please select a scheduled date.');
 
                     PaymentService.ScheduleInvoicesFromFinalize(
                         InvoiceNos,
@@ -160,8 +142,8 @@ page 50107 "Chiizu Finalize Payment"
         BankAccountNo: Code[20];
         BankAccountName: Text[100];
         TotalAmount: Decimal;
-        FinalizeMode: Enum "Chiizu Finalize Mode";
         ScheduledDate: Date;
+        FinalizeMode: Enum "Chiizu Finalize Mode";
 
     procedure SetContext(Invoices: List of [Code[20]]; Mode: Enum "Chiizu Finalize Mode")
     begin
@@ -173,7 +155,6 @@ page 50107 "Chiizu Finalize Payment"
 
         CalculateTotal();
     end;
-
 
     local procedure CalculateTotal()
     var
@@ -193,11 +174,8 @@ page 50107 "Chiizu Finalize Payment"
     end;
 
     trigger OnOpenPage()
-    var
-        PaymentService: Codeunit "Chiizu Payment Service";
     begin
         // Push selected invoices into subpage AFTER page is created
         CurrPage.Invoices.Page.SetInvoices(InvoiceNos);
-        PaymentService.BuildTempSchedulePreview(InvoiceNos, CurrPage.Invoices.Page.GetTempSchedule());
     end;
 }

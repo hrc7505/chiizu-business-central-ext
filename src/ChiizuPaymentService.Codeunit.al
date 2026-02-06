@@ -1,9 +1,26 @@
 codeunit 50104 "Chiizu Payment Service"
 {
     // --------------------------
-    // BULK PAYMENT
+    // BULK INVOICE PAYMENT
     // --------------------------
     procedure PayInvoices(SelectedInvoiceNos: List of [Code[20]]; BankAccountNo: Code[20])
+    begin
+        ExecuteBulkPayment(SelectedInvoiceNos, BankAccountNo, '/create-payment', 0D);
+    end;
+
+    // --------------------------
+    // SCHEDULE PAYMENT
+    // --------------------------
+    procedure ScheduleInvoicesFromFinalize(SelectedInvoiceNos: List of [Code[20]]; BankAccountNo: Code[20]; ScheduledDate: Date)
+    begin
+        if ScheduledDate < Today then
+            Error('Scheduled date must be today or later.');
+
+        ExecuteBulkPayment(SelectedInvoiceNos, BankAccountNo, '/schedule-payment', ScheduledDate);
+    end;
+
+
+    local procedure ExecuteBulkPayment(SelectedInvoiceNos: List of [Code[20]]; BankAccountNo: Code[20]; Endpoint: Text; ScheduleDate: Date)
     var
         Setup: Record "Chiizu Setup";
         SetupMgmt: Codeunit "Chiizu Setup Management";
@@ -26,9 +43,10 @@ codeunit 50104 "Chiizu Payment Service"
     begin
         SetupMgmt.GetSetup(Setup);
 
-        // 🔒 Defensive validation (execution safety)
         if not BankAccountRec.Get(BankAccountNo) then
             Error('Bank account %1 not found.', BankAccountNo);
+
+        ValidateInvoicesForPayment(SelectedInvoiceNos);
 
         Clear(Payload);
         Clear(BatchesArr);
@@ -36,7 +54,6 @@ codeunit 50104 "Chiizu Payment Service"
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
-            // 🔑 Resolve ledger entry (NOT validation)
             if not ResolvePayableVLE(InvNo, PayableVLE) then
                 Error('Invoice %1 cannot be processed.', InvNo);
 
@@ -45,7 +62,7 @@ codeunit 50104 "Chiizu Payment Service"
 
             BatchId := CreateBatchId();
 
-            // ---- Create Batch (BC side) ----
+            // ---- BC batch ----
             Batch.Init();
             Batch."Batch Id" := BatchId;
             Batch."Vendor No." := PayableVLE."Vendor No.";
@@ -54,7 +71,6 @@ codeunit 50104 "Chiizu Payment Service"
             Batch.Status := Batch.Status::Open;
             Batch.Insert(true);
 
-            // Link invoice to batch
             LinkInvoiceToBatch(InvNo, BatchId);
 
             // ---- Invoice JSON ----
@@ -73,12 +89,15 @@ codeunit 50104 "Chiizu Payment Service"
             BatchesArr.Add(BatchObj);
         end;
 
-        // ---- Final Payload ----
         Payload.Add('callbackUrl', UrlHelper.GetPaymentWebhookUrl());
         Payload.Add('bankAccountNo', BankAccountNo);
         Payload.Add('batches', BatchesArr);
 
-        ResponseText := CallBulkAPI(Payload, '/create-payment');
+        // ⭐ scheduleDate at TOP LEVEL (your requirement)
+        if ScheduleDate <> 0D then
+            Payload.Add('scheduleDate', Format(ScheduleDate));
+
+        ResponseText := CallBulkAPI(Payload, Endpoint);
         ApplyApiResult(ResponseText);
     end;
 
@@ -109,63 +128,6 @@ codeunit 50104 "Chiizu Payment Service"
                 Invoice."Last Updated At" := CurrentDateTime();
                 Invoice.Modify(true);
             until Invoice.Next() = 0;
-    end;
-
-
-    // --------------------------
-    // BULK SCHEDULING
-    // --------------------------
-    procedure ScheduleInvoicesFromFinalize(
-        SelectedInvoiceNos: List of [Code[20]];
-        BankAccountNo: Code[20];
-        ScheduledDate: Date
-    )
-    var
-        PayableVLE: Record "Vendor Ledger Entry";
-        Scheduled: Record "Chiizu Scheduled Payment";
-        InvoiceStatus: Record "Chiizu Invoice Status";
-        InvNo: Code[20];
-        Amount: Decimal;
-        i: Integer;
-    begin
-        if SelectedInvoiceNos.Count() = 0 then
-            Error('No invoices selected.');
-
-        if ScheduledDate < Today then
-            Error('Scheduled date must be today or later.');
-
-        // Reuse your existing validations
-        ValidateInvoicesForPayment(SelectedInvoiceNos);
-
-        for i := 1 to SelectedInvoiceNos.Count() do begin
-            InvNo := SelectedInvoiceNos.Get(i);
-
-            if not ResolvePayableVLE(InvNo, PayableVLE) then
-                Error('Invoice %1 is not payable.', InvNo);
-
-            PayableVLE.CalcFields("Remaining Amount");
-            Amount := Abs(PayableVLE."Remaining Amount");
-
-            // 🔑 CRITICAL: never copy Entry No.
-            Scheduled.Init();
-            Scheduled."Invoice No." := InvNo;
-            Scheduled."Vendor No." := PayableVLE."Vendor No.";
-            Scheduled.Amount := Amount;
-            Scheduled."Scheduled Date" := ScheduledDate;
-            Scheduled.Status := Scheduled.Status::Scheduled;
-            Scheduled.Insert(true); // AutoIncrement fires here
-
-            // Optional: status bridge
-            if not InvoiceStatus.Get(InvNo) then begin
-                InvoiceStatus.Init();
-                InvoiceStatus."Invoice No." := InvNo;
-                InvoiceStatus.Insert(true);
-            end;
-
-            InvoiceStatus.Status := InvoiceStatus.Status::Scheduled;
-            InvoiceStatus."Last Updated At" := CurrentDateTime();
-            InvoiceStatus.Modify(true);
-        end;
     end;
 
     // --------------------------
@@ -239,31 +201,69 @@ codeunit 50104 "Chiizu Payment Service"
     local procedure ApplyApiResult(ResponseText: Text)
     var
         Root: JsonObject;
+        StatusToken: JsonToken;
         Token: JsonToken;
         BatchIds: JsonArray;
         BatchIdToken: JsonToken;
+
         Batch: Record "Chiizu Payment Batch";
+        InvoiceStatus: Record "Chiizu Invoice Status";
+
+        ApiStatusTxt: Text;
+        ApiStatus: Enum "Chiizu Payment Status";
         i: Integer;
     begin
         if not Root.ReadFrom(ResponseText) then
             Error('Invalid API response.');
 
+        // ----------------------------
+        // 1️⃣ Read status from API
+        // ----------------------------
+        if not Root.Get('status', StatusToken) then
+            Error('status not found in API response.');
+
+        ApiStatusTxt := UpperCase(StatusToken.AsValue().AsText());
+
+        case ApiStatusTxt of
+            'PROCESSING':
+                ApiStatus := ApiStatus::Processing;
+            'SCHEDULED':
+                ApiStatus := ApiStatus::Scheduled;
+            /* 'FAILED':
+                ApiStatus := ApiStatus::Failed; */
+            else
+                Error('Unsupported status returned by API: %1', ApiStatusTxt);
+        end;
+
+        // ----------------------------
+        // 2️⃣ Read accepted batches
+        // ----------------------------
         if not Root.Get('acceptedBatches', Token) then
             Error('acceptedBatches not found in API response.');
 
         BatchIds := Token.AsArray();
 
+        // ----------------------------
+        // 3️⃣ Apply status consistently
+        // ----------------------------
         for i := 0 to BatchIds.Count() - 1 do begin
             BatchIds.Get(i, BatchIdToken);
 
-            if Batch.Get(BatchIdToken.AsValue().AsText()) then begin
-                // ✅ batch → Processing
-                Batch.Status := Batch.Status::Processing;
-                Batch.Modify(true);
+            if not Batch.Get(BatchIdToken.AsValue().AsText()) then
+                continue;
 
-                // ✅ invoices → Processing
-                UpdateInvoicesProcessing(Batch."Batch Id");
-            end;
+            // 🔹 Batch
+            Batch.Status := ApiStatus;
+            Batch.Modify(true);
+
+            // 🔹 Invoices under this batch
+            InvoiceStatus.SetRange("Batch Id", Batch."Batch Id");
+            if InvoiceStatus.FindSet() then
+                repeat
+                    InvoiceStatus.Status := ApiStatus;
+                    InvoiceStatus."Last Updated At" := CurrentDateTime();
+                    InvoiceStatus.Modify(true);
+                until InvoiceStatus.Next() = 0;
         end;
     end;
 
@@ -360,37 +360,4 @@ codeunit 50104 "Chiizu Payment Service"
                 Error('Invoice %1 has no remaining amount.');
         end;
     end;
-
-    procedure BuildTempSchedulePreview(SelectedInvoiceNos: List of [Code[20]]; var TempSchedule: Record "Chiizu Scheduled Payment" temporary)
-    var
-        PayableVLE: Record "Vendor Ledger Entry";
-        InvNo: Code[20];
-        i: Integer;
-    begin
-        TempSchedule.Reset();
-        TempSchedule.DeleteAll(); // safe – temp only
-
-        if SelectedInvoiceNos.Count() = 0 then
-            exit;
-
-        for i := 1 to SelectedInvoiceNos.Count() do begin
-            InvNo := SelectedInvoiceNos.Get(i);
-
-            if not ResolvePayableVLE(InvNo, PayableVLE) then
-                continue;
-
-            PayableVLE.CalcFields("Remaining Amount");
-            if PayableVLE."Remaining Amount" = 0 then
-                continue;
-
-            TempSchedule.Init();
-            // 🚫 DO NOT TOUCH Entry No.
-            TempSchedule."Invoice No." := InvNo;
-            TempSchedule."Vendor No." := PayableVLE."Vendor No.";
-            TempSchedule.Amount := Abs(PayableVLE."Remaining Amount");
-            TempSchedule.Status := TempSchedule.Status::Open;
-            TempSchedule.Insert(); // temp insert only
-        end;
-    end;
-
 }
