@@ -129,45 +129,22 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                 ApplicationArea = All;
                 Promoted = true;
                 PromotedCategory = Process;
-
-                Enabled = IsAnyScheduled;
+                Enabled = IsSingleScheduledSelected;
 
                 trigger OnAction()
                 var
                     PaymentService: Codeunit "Chiizu Payment Service";
-                    SelPurchInv: Record "Purch. Inv. Header";
-                    SelectedInvoiceNos: List of [Code[20]];
                 begin
-                    CurrPage.SetSelectionFilter(SelPurchInv);
-
-                    // 🔒 CRITICAL: only explicit user selection
-                    SelPurchInv.MarkedOnly(true);
-
-                    if SelPurchInv.IsEmpty() then
-                        Error('No invoices selected.');
-
-                    SelPurchInv.FindSet();
-                    repeat
-                        SelectedInvoiceNos.Add(SelPurchInv."No.");
-                    until SelPurchInv.Next() = 0;
-
-                    if not Confirm(
-                        StrSubstNo(
-                            'Cancel scheduled payment for %1 invoice(s)?\%2',
-                            SelectedInvoiceNos.Count(),
-                            FormatInvoiceList(SelectedInvoiceNos)
-                        ),
-                        false
-                    ) then
+                    // Since it's only enabled when 1 is selected, we can skip the manual Count checks
+                    if not Confirm('Are you sure you want to cancel the scheduled payment for Invoice %1?', false, Rec."No.") then
                         exit;
 
-                    PaymentService.CancelScheduledInvoices(SelectedInvoiceNos);
+                    PaymentService.CancelScheduledInvoice(Rec."No.");
 
-                    // 🔄 Hard refresh (selection naturally resets)
-                    CurrPage.Update(true);
+                    // Refresh to show the status change back to 'Open'
+                    CurrPage.Update(false);
                 end;
             }
-
         }
     }
 
@@ -177,7 +154,7 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
     var
         ChiizuStatus: Enum "Chiizu Payment Status";
         ChiizuScheduledDate: Date;
-        IsAnyScheduled: Boolean;
+        IsSingleScheduledSelected: Boolean;
 
     // ==========================
     // PER-ROW DISPLAY LOGIC
@@ -216,17 +193,18 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
         SelInv: Record "Purch. Inv. Header";
         Stat: Record "Chiizu Invoice Status";
     begin
-        IsAnyScheduled := false;
+        IsSingleScheduledSelected := false;
 
         CurrPage.SetSelectionFilter(SelInv);
-        if SelInv.FindSet() then
-            repeat
+
+        // Magic: Check if exactly 1 record is in the selection
+        if SelInv.Count() = 1 then begin
+            if SelInv.FindFirst() then begin
+                // Check if that specific record is 'Scheduled'
                 if Stat.Get(SelInv."No.") then
-                    if Stat.Status = Stat.Status::Scheduled then begin
-                        IsAnyScheduled := true;
-                        exit;
-                    end;
-            until SelInv.Next() = 0;
+                    IsSingleScheduledSelected := (Stat.Status = Stat.Status::Scheduled);
+            end;
+        end;
     end;
 
     local procedure FormatInvoiceList(InvoiceNos: List of [Code[20]]): Text

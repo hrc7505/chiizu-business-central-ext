@@ -26,8 +26,15 @@ codeunit 50104 "Chiizu Payment Service"
         SetupMgmt: Codeunit "Chiizu Setup Management";
         PayableVLE: Record "Vendor Ledger Entry";
         Batch: Record "Chiizu Payment Batch";
-        UrlHelper: Codeunit "Chiizu Url Helper";
         BankAccountRec: Record "Bank Account";
+        UrlHelper: Codeunit "Chiizu Url Helper";
+
+        // 🔹 Vendor grouping
+        VendorInvoices: Dictionary of [Code[20], List of [Code[20]]];
+        VendorTotals: Dictionary of [Code[20], Decimal];
+
+        InvoiceList: List of [Code[20]];
+        VendorNo: Code[20];
 
         Payload: JsonObject;
         BatchesArr: JsonArray;
@@ -38,9 +45,13 @@ codeunit 50104 "Chiizu Payment Service"
         InvNo: Code[20];
         BatchId: Code[50];
         Amount: Decimal;
+        TotalAmount: Decimal;
         i: Integer;
         ResponseText: Text;
     begin
+        // --------------------------
+        // 1️⃣ Setup & validation
+        // --------------------------
         SetupMgmt.GetSetup(Setup);
 
         if not BankAccountRec.Get(BankAccountNo) then
@@ -48,55 +59,103 @@ codeunit 50104 "Chiizu Payment Service"
 
         ValidateInvoicesForPayment(SelectedInvoiceNos);
 
-        Clear(Payload);
-        Clear(BatchesArr);
+        Clear(VendorInvoices);
+        Clear(VendorTotals);
 
+        // --------------------------
+        // 2️⃣ GROUP invoices by vendor
+        // --------------------------
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
             if not ResolvePayableVLE(InvNo, PayableVLE) then
                 Error('Invoice %1 cannot be processed.', InvNo);
 
+            VendorNo := PayableVLE."Vendor No.";
+
             PayableVLE.CalcFields("Remaining Amount");
             Amount := Abs(PayableVLE."Remaining Amount");
 
+            // 🔹 Get or initialize invoice list
+            if VendorInvoices.ContainsKey(VendorNo) then
+                VendorInvoices.Get(VendorNo, InvoiceList)
+            else begin
+                InvoiceList := InvoiceList; // empty list
+                VendorTotals.Add(VendorNo, 0);
+            end;
+
+            InvoiceList.Add(InvNo);
+            VendorInvoices.Set(VendorNo, InvoiceList);
+
+            VendorTotals.Set(
+                VendorNo,
+                VendorTotals.Get(VendorNo) + Amount
+            );
+        end;
+
+        // --------------------------
+        // 3️⃣ Build BC batches + JSON
+        // --------------------------
+        Clear(Payload);
+        Clear(BatchesArr);
+
+        foreach VendorNo in VendorInvoices.Keys() do begin
+            VendorInvoices.Get(VendorNo, InvoiceList);
+            TotalAmount := VendorTotals.Get(VendorNo);
+
             BatchId := CreateBatchId();
 
-            // ---- BC batch ----
+            // 🔹 BC batch (ONE per vendor)
             Batch.Init();
             Batch."Batch Id" := BatchId;
-            Batch."Vendor No." := PayableVLE."Vendor No.";
-            Batch."Total Amount" := Amount;
+            Batch."Vendor No." := VendorNo;
+            Batch."Total Amount" := TotalAmount;
             Batch."Created At" := CurrentDateTime();
             Batch.Status := Batch.Status::Open;
             Batch.Insert(true);
 
-            LinkInvoiceToBatch(InvNo, BatchId);
-
-            // ---- Invoice JSON ----
+            // 🔹 JSON invoices
             Clear(InvoicesArr);
-            Clear(InvoiceObj);
-            InvoiceObj.Add('invoiceNo', InvNo);
-            InvoiceObj.Add('amount', Amount);
-            InvoicesArr.Add(InvoiceObj);
 
-            // ---- Batch JSON ----
+            for i := 1 to InvoiceList.Count() do begin
+                InvNo := InvoiceList.Get(i);
+
+                ResolvePayableVLE(InvNo, PayableVLE);
+                PayableVLE.CalcFields("Remaining Amount");
+                Amount := Abs(PayableVLE."Remaining Amount");
+
+                Clear(InvoiceObj);
+                InvoiceObj.Add('invoiceNo', InvNo);
+                InvoiceObj.Add('amount', Amount);
+                InvoicesArr.Add(InvoiceObj);
+
+                // 🔗 Link invoice → batch
+                LinkInvoiceToBatch(InvNo, BatchId);
+            end;
+
+            // 🔹 JSON batch
             Clear(BatchObj);
             BatchObj.Add('batchId', BatchId);
-            BatchObj.Add('vendorNo', PayableVLE."Vendor No.");
+            BatchObj.Add('vendorNo', VendorNo);
             BatchObj.Add('invoices', InvoicesArr);
 
             BatchesArr.Add(BatchObj);
         end;
 
+        // --------------------------
+        // 4️⃣ Final payload
+        // --------------------------
         Payload.Add('callbackUrl', UrlHelper.GetPaymentWebhookUrl());
         Payload.Add('bankAccountNo', BankAccountNo);
         Payload.Add('batches', BatchesArr);
 
-        // ⭐ scheduledDate at TOP LEVEL (your requirement)
+        // ⭐ Scheduled date at TOP LEVEL
         if ScheduledDate <> 0D then
             Payload.Add('scheduledDate', Format(ScheduledDate));
 
+        // --------------------------
+        // 5️⃣ Call API + apply result
+        // --------------------------
         ResponseText := CallBulkAPI(Payload, Endpoint);
         ApplyApiResult(ResponseText);
     end;
@@ -133,66 +192,73 @@ codeunit 50104 "Chiizu Payment Service"
     // --------------------------
     // BULK CANCEL SCHEDULED PAYMENTS
     // --------------------------
-    procedure CancelScheduledInvoices(SelectedInvoiceNos: List of [Code[20]])
+    // --------------------------
+    // CANCEL SCHEDULED PAYMENT (SINGLE)
+    // --------------------------
+    procedure CancelScheduledInvoice(InvoiceNo: Code[20])
     var
-        Setup: Record "Chiizu Setup";
-        SetupMgmt: Codeunit "Chiizu Setup Management";
         InvoiceStatus: Record "Chiizu Invoice Status";
+        Batch: Record "Chiizu Payment Batch";
         Payload: JsonObject;
-        Invoices: JsonArray;
-        Obj: JsonObject;
         ResponseText: Text;
-        InvNo: Code[20];
-        i: Integer;
-        EffectiveStatus: Enum "Chiizu Payment Status";
-        InvalidInvoices: Text;
-        HasInvalid: Boolean;
+        BatchId: Code[50];
     begin
-        if SelectedInvoiceNos.Count() = 0 then
-            Error('No invoices were provided.');
+        // 1. Validation: Must be Scheduled
+        if not InvoiceStatus.Get(InvoiceNo) then
+            Error('Invoice %1 status not found.', InvoiceNo);
 
-        SetupMgmt.GetSetup(Setup);
-        Clear(Payload);
-        Clear(Invoices);
+        if InvoiceStatus.Status <> InvoiceStatus.Status::Scheduled then
+            Error('Only scheduled invoices can be cancelled.');
 
-        HasInvalid := false;
-        InvalidInvoices := '';
+        BatchId := InvoiceStatus."Batch Id";
+        if BatchId = '' then
+            Error('Invoice %1 is not associated with a batch.', InvoiceNo);
 
-        for i := 1 to SelectedInvoiceNos.Count() do begin
-            InvNo := SelectedInvoiceNos.Get(i);
-            EffectiveStatus := EffectiveStatus::Open;
+        // 2. Build Payload { "batchId": "...", "invoiceId": "..." }
+        Payload.Add('batchId', BatchId);
+        Payload.Add('invoiceId', InvoiceNo);
 
-            if InvoiceStatus.Get(InvNo) then
-                EffectiveStatus := InvoiceStatus.Status;
-
-            if EffectiveStatus <> EffectiveStatus::Scheduled then begin
-                HasInvalid := true;
-                InvalidInvoices +=
-                    StrSubstNo('• %1 (status = %2)', InvNo, EffectiveStatus) + '\';
-            end;
-        end;
-
-        if HasInvalid then
-            Error(
-                'Cancel Scheduled Payment failed.' + '\' +
-                'The following invoices are not in Scheduled status:' + '\' +
-                InvalidInvoices
-            );
-
-        for i := 1 to SelectedInvoiceNos.Count() do begin
-            InvNo := SelectedInvoiceNos.Get(i);
-            Clear(Obj);
-            Obj.Add('invoiceNo', InvNo);
-            Obj.Add('action', 'CANCEL');
-            Invoices.Add(Obj);
-        end;
-
-        Payload.Add('batchId', CreateBatchId());
-        Payload.Add('invoices', Invoices);
-        Payload.Add('isCancel', true);
-
+        // 3. Call API
+        // Expected response: { "isCancelled": true, "batchId": "...", "invoiceNo": "..." }
         ResponseText := CallBulkAPI(Payload, '/cancel-scheduled-payment');
-        ApplyApiResult(ResponseText);
+
+        // 4. Handle Result & Local Cleanup
+        HandleCancelResponse(ResponseText, InvoiceNo, BatchId);
+    end;
+
+    local procedure HandleCancelResponse(ResponseText: Text; InvoiceNo: Code[20]; BatchId: Code[50])
+    var
+        ResultObj: JsonObject;
+        IsCancelledToken: JsonToken;
+        InvoiceStatus: Record "Chiizu Invoice Status";
+        Batch: Record "Chiizu Payment Batch";
+    begin
+        if not ResultObj.ReadFrom(ResponseText) then
+            Error('Invalid response from cancellation API.');
+
+        if ResultObj.Get('isCancelled', IsCancelledToken) then
+            if IsCancelledToken.AsValue().AsBoolean() then begin
+
+                // 5. Remove link/Reset status to Open
+                if InvoiceStatus.Get(InvoiceNo) then begin
+                    InvoiceStatus."Batch Id" := '';
+                    InvoiceStatus."Scheduled Date" := 0D;
+                    InvoiceStatus.Status := InvoiceStatus.Status::Open;
+                    InvoiceStatus."Last Updated At" := CurrentDateTime();
+                    InvoiceStatus.Modify(true);
+                end;
+
+                // 6. If batch has no more invoices, delete the batch
+                InvoiceStatus.Reset();
+                InvoiceStatus.SetRange("Batch Id", BatchId);
+
+                if InvoiceStatus.IsEmpty() then begin
+                    if Batch.Get(BatchId) then
+                        Batch.Delete(true);
+                end;
+
+                Message('Payment for invoice %1 cancelled successfully.', InvoiceNo);
+            end;
     end;
 
     // --------------------------
