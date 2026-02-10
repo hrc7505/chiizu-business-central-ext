@@ -52,7 +52,7 @@ codeunit 50104 "Chiizu Payment Service"
         // --------------------------
         // 1️⃣ Setup & validation
         // --------------------------
-        SetupMgmt.GetSetup(Setup);
+        Setup := SetupMgmt.EnsureConnected();
 
         if not BankAccountRec.Get(BankAccountNo) then
             Error('Bank account %1 not found.', BankAccountNo);
@@ -72,25 +72,23 @@ codeunit 50104 "Chiizu Payment Service"
                 Error('Invoice %1 cannot be processed.', InvNo);
 
             VendorNo := PayableVLE."Vendor No.";
-
             PayableVLE.CalcFields("Remaining Amount");
             Amount := Abs(PayableVLE."Remaining Amount");
 
-            // 🔹 Get or initialize invoice list
             if VendorInvoices.ContainsKey(VendorNo) then
                 VendorInvoices.Get(VendorNo, InvoiceList)
             else begin
-                InvoiceList := InvoiceList; // empty list
+                // 🔹 FIX: Properly clear the list for each new vendor
+                Clear(InvoiceList);
                 VendorTotals.Add(VendorNo, 0);
             end;
 
-            InvoiceList.Add(InvNo);
-            VendorInvoices.Set(VendorNo, InvoiceList);
+            if not InvoiceList.Contains(InvNo) then begin
+                InvoiceList.Add(InvNo);
+                VendorInvoices.Set(VendorNo, InvoiceList);
 
-            VendorTotals.Set(
-                VendorNo,
-                VendorTotals.Get(VendorNo) + Amount
-            );
+                VendorTotals.Set(VendorNo, VendorTotals.Get(VendorNo) + Amount);
+            end;
         end;
 
         // --------------------------
@@ -398,18 +396,28 @@ codeunit 50104 "Chiizu Payment Service"
     var
         Setup: Record "Chiizu Setup";
         SetupMgmt: Codeunit "Chiizu Setup Management";
+        Batch: Record "Chiizu Payment Batch";
+        NewBatchId: Code[20];
     begin
-        SetupMgmt.GetSetup(Setup);
+        Setup.LockTable(); // 🔹 Prevent concurrency issues
+
+        // 🔹 Use your new logic: Validate and get the record in one go
+        Setup := SetupMgmt.EnsureConnected();
 
         Setup."Last Batch No." += 1;
         Setup.Modify(true);
 
-        exit(
-            'BC' +
-            Format(Today(), 0, '<Year4><Month,2><Day,2>') +
-            '-' +
-            PadStr(Format(Setup."Last Batch No."), 6, '0')
-        );
+        // 🔹 Reserve the number immediately so others don't grab it
+        Commit();
+
+        NewBatchId := 'BC' + Format(Today(), 0, '<Year4><Month,2><Day,2>') + '-' +
+                      PadStr(Format(Setup."Last Batch No."), 6, '0');
+
+        // 🛑 DUPLICATE GUARD: If the ID exists, throw a clear error instead of a system crash
+        if Batch.Get(NewBatchId) then
+            Error('Batch ID %1 already exists. Please manually increase "Last Batch No." in Chiizu Setup.', NewBatchId);
+
+        exit(NewBatchId);
     end;
 
     procedure ValidateInvoicesForPayment(SelectedInvoiceNos: List of [Code[20]])

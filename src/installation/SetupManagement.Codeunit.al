@@ -6,10 +6,11 @@ codeunit 50108 "Chiizu Setup Management"
             Error('Chiizu setup is not initialized.');
     end;
 
-    procedure EnsureConnected()
+    procedure EnsureConnected(): Record "Chiizu Setup"
     var
         Setup: Record "Chiizu Setup";
     begin
+        // Use your existing GetSetup to load the record
         GetSetup(Setup);
 
         if Setup."API Base URL" = '' then
@@ -20,6 +21,7 @@ codeunit 50108 "Chiizu Setup Management"
 
         if Setup."Last Verified At" = 0DT then
             Error('Chiizu is not connected. Please verify connection.');
-    end;
 
+        exit(Setup); // 🔹 Return the validated record
+    end;
 }
