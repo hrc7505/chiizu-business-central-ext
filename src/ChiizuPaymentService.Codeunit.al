@@ -20,7 +20,7 @@ codeunit 50104 "Chiizu Payment Service"
     end;
 
 
-    local procedure ExecuteBulkPayment(SelectedInvoiceNos: List of [Code[20]]; BankAccountNo: Code[20]; Endpoint: Text; ScheduleDate: Date)
+    local procedure ExecuteBulkPayment(SelectedInvoiceNos: List of [Code[20]]; BankAccountNo: Code[20]; Endpoint: Text; ScheduledDate: Date)
     var
         Setup: Record "Chiizu Setup";
         SetupMgmt: Codeunit "Chiizu Setup Management";
@@ -93,9 +93,9 @@ codeunit 50104 "Chiizu Payment Service"
         Payload.Add('bankAccountNo', BankAccountNo);
         Payload.Add('batches', BatchesArr);
 
-        // ⭐ scheduleDate at TOP LEVEL (your requirement)
-        if ScheduleDate <> 0D then
-            Payload.Add('scheduleDate', Format(ScheduleDate));
+        // ⭐ scheduledDate at TOP LEVEL (your requirement)
+        if ScheduledDate <> 0D then
+            Payload.Add('scheduledDate', Format(ScheduledDate));
 
         ResponseText := CallBulkAPI(Payload, Endpoint);
         ApplyApiResult(ResponseText);
@@ -209,15 +209,22 @@ codeunit 50104 "Chiizu Payment Service"
         Batch: Record "Chiizu Payment Batch";
         InvoiceStatus: Record "Chiizu Invoice Status";
 
+        ScheduledDateToken: JsonToken;
+        ScheduledDateTxt: Text;
+        ScheduledDate: Date;
+
         ApiStatusTxt: Text;
         ApiStatus: Enum "Chiizu Payment Status";
         i: Integer;
     begin
+        // ----------------------------
+        // Parse API response
+        // ----------------------------
         if not Root.ReadFrom(ResponseText) then
             Error('Invalid API response.');
 
         // ----------------------------
-        // 1️⃣ Read status from API
+        // 1️⃣ Read status
         // ----------------------------
         if not Root.Get('status', StatusToken) then
             Error('status not found in API response.');
@@ -229,8 +236,6 @@ codeunit 50104 "Chiizu Payment Service"
                 ApiStatus := ApiStatus::Processing;
             'SCHEDULED':
                 ApiStatus := ApiStatus::Scheduled;
-            /* 'FAILED':
-                ApiStatus := ApiStatus::Failed; */
             else
                 Error('Unsupported status returned by API: %1', ApiStatusTxt);
         end;
@@ -244,7 +249,19 @@ codeunit 50104 "Chiizu Payment Service"
         BatchIds := Token.AsArray();
 
         // ----------------------------
-        // 3️⃣ Apply status consistently
+        // 3️⃣ Read scheduled date (optional)
+        // ----------------------------
+        Clear(ScheduledDate);
+        if Root.Get('scheduledDate', ScheduledDateToken) then begin
+            ScheduledDateTxt := ScheduledDateToken.AsValue().AsText();
+
+            // API likely returns ISO date-time → extract YYYY-MM-DD
+            if not Evaluate(ScheduledDate, CopyStr(ScheduledDateTxt, 1, 10)) then
+                Error('Invalid scheduledDate format: %1', ScheduledDateTxt);
+        end;
+
+        // ----------------------------
+        // 4️⃣ Apply updates consistently
         // ----------------------------
         for i := 0 to BatchIds.Count() - 1 do begin
             BatchIds.Get(i, BatchIdToken);
@@ -252,17 +269,23 @@ codeunit 50104 "Chiizu Payment Service"
             if not Batch.Get(BatchIdToken.AsValue().AsText()) then
                 continue;
 
-            // 🔹 Batch
+            // 🔹 Update batch status
             Batch.Status := ApiStatus;
             Batch.Modify(true);
 
-            // 🔹 Invoices under this batch
+            // 🔹 Update invoices under this batch
+            InvoiceStatus.Reset();
             InvoiceStatus.SetRange("Batch Id", Batch."Batch Id");
-            if InvoiceStatus.FindSet() then
+
+            if InvoiceStatus.FindSet(true) then
                 repeat
-                    InvoiceStatus.Status := ApiStatus;
+                    // ✔ System-safe status + scheduled date update
+                    InvoiceStatus.SetStatusSystem(ApiStatus, (ApiStatus = ApiStatus::Scheduled) ? ScheduledDate : 0D);
+
+                    // ✔ Audit
                     InvoiceStatus."Last Updated At" := CurrentDateTime();
                     InvoiceStatus.Modify(true);
+
                 until InvoiceStatus.Next() = 0;
         end;
     end;
