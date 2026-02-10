@@ -20,14 +20,26 @@ codeunit 50104 "Chiizu Payment Service"
     end;
 
 
-    local procedure ExecuteBulkPayment(SelectedInvoiceNos: List of [Code[20]]; BankAccountNo: Code[20]; Endpoint: Text; ScheduledDate: Date)
+    local procedure ExecuteBulkPayment(
+    SelectedInvoiceNos: List of [Code[20]];
+    BankAccountNo: Code[20];
+    Endpoint: Text;
+    ScheduledDate: Date
+)
     var
         Setup: Record "Chiizu Setup";
         SetupMgmt: Codeunit "Chiizu Setup Management";
         PayableVLE: Record "Vendor Ledger Entry";
         Batch: Record "Chiizu Payment Batch";
-        UrlHelper: Codeunit "Chiizu Url Helper";
         BankAccountRec: Record "Bank Account";
+        UrlHelper: Codeunit "Chiizu Url Helper";
+
+        // 🔹 Vendor grouping
+        VendorInvoices: Dictionary of [Code[20], List of [Code[20]]];
+        VendorTotals: Dictionary of [Code[20], Decimal];
+
+        InvoiceList: List of [Code[20]];
+        VendorNo: Code[20];
 
         Payload: JsonObject;
         BatchesArr: JsonArray;
@@ -38,9 +50,13 @@ codeunit 50104 "Chiizu Payment Service"
         InvNo: Code[20];
         BatchId: Code[50];
         Amount: Decimal;
+        TotalAmount: Decimal;
         i: Integer;
         ResponseText: Text;
     begin
+        // --------------------------
+        // 1️⃣ Setup & validation
+        // --------------------------
         SetupMgmt.GetSetup(Setup);
 
         if not BankAccountRec.Get(BankAccountNo) then
@@ -48,55 +64,103 @@ codeunit 50104 "Chiizu Payment Service"
 
         ValidateInvoicesForPayment(SelectedInvoiceNos);
 
-        Clear(Payload);
-        Clear(BatchesArr);
+        Clear(VendorInvoices);
+        Clear(VendorTotals);
 
+        // --------------------------
+        // 2️⃣ GROUP invoices by vendor
+        // --------------------------
         for i := 1 to SelectedInvoiceNos.Count() do begin
             InvNo := SelectedInvoiceNos.Get(i);
 
             if not ResolvePayableVLE(InvNo, PayableVLE) then
                 Error('Invoice %1 cannot be processed.', InvNo);
 
+            VendorNo := PayableVLE."Vendor No.";
+
             PayableVLE.CalcFields("Remaining Amount");
             Amount := Abs(PayableVLE."Remaining Amount");
 
+            // 🔹 Get or initialize invoice list
+            if VendorInvoices.ContainsKey(VendorNo) then
+                VendorInvoices.Get(VendorNo, InvoiceList)
+            else begin
+                InvoiceList := InvoiceList; // empty list
+                VendorTotals.Add(VendorNo, 0);
+            end;
+
+            InvoiceList.Add(InvNo);
+            VendorInvoices.Set(VendorNo, InvoiceList);
+
+            VendorTotals.Set(
+                VendorNo,
+                VendorTotals.Get(VendorNo) + Amount
+            );
+        end;
+
+        // --------------------------
+        // 3️⃣ Build BC batches + JSON
+        // --------------------------
+        Clear(Payload);
+        Clear(BatchesArr);
+
+        foreach VendorNo in VendorInvoices.Keys() do begin
+            VendorInvoices.Get(VendorNo, InvoiceList);
+            TotalAmount := VendorTotals.Get(VendorNo);
+
             BatchId := CreateBatchId();
 
-            // ---- BC batch ----
+            // 🔹 BC batch (ONE per vendor)
             Batch.Init();
             Batch."Batch Id" := BatchId;
-            Batch."Vendor No." := PayableVLE."Vendor No.";
-            Batch."Total Amount" := Amount;
+            Batch."Vendor No." := VendorNo;
+            Batch."Total Amount" := TotalAmount;
             Batch."Created At" := CurrentDateTime();
             Batch.Status := Batch.Status::Open;
             Batch.Insert(true);
 
-            LinkInvoiceToBatch(InvNo, BatchId);
-
-            // ---- Invoice JSON ----
+            // 🔹 JSON invoices
             Clear(InvoicesArr);
-            Clear(InvoiceObj);
-            InvoiceObj.Add('invoiceNo', InvNo);
-            InvoiceObj.Add('amount', Amount);
-            InvoicesArr.Add(InvoiceObj);
 
-            // ---- Batch JSON ----
+            for i := 1 to InvoiceList.Count() do begin
+                InvNo := InvoiceList.Get(i);
+
+                ResolvePayableVLE(InvNo, PayableVLE);
+                PayableVLE.CalcFields("Remaining Amount");
+                Amount := Abs(PayableVLE."Remaining Amount");
+
+                Clear(InvoiceObj);
+                InvoiceObj.Add('invoiceNo', InvNo);
+                InvoiceObj.Add('amount', Amount);
+                InvoicesArr.Add(InvoiceObj);
+
+                // 🔗 Link invoice → batch
+                LinkInvoiceToBatch(InvNo, BatchId);
+            end;
+
+            // 🔹 JSON batch
             Clear(BatchObj);
             BatchObj.Add('batchId', BatchId);
-            BatchObj.Add('vendorNo', PayableVLE."Vendor No.");
+            BatchObj.Add('vendorNo', VendorNo);
             BatchObj.Add('invoices', InvoicesArr);
 
             BatchesArr.Add(BatchObj);
         end;
 
+        // --------------------------
+        // 4️⃣ Final payload
+        // --------------------------
         Payload.Add('callbackUrl', UrlHelper.GetPaymentWebhookUrl());
         Payload.Add('bankAccountNo', BankAccountNo);
         Payload.Add('batches', BatchesArr);
 
-        // ⭐ scheduledDate at TOP LEVEL (your requirement)
+        // ⭐ Scheduled date at TOP LEVEL
         if ScheduledDate <> 0D then
             Payload.Add('scheduledDate', Format(ScheduledDate));
 
+        // --------------------------
+        // 5️⃣ Call API + apply result
+        // --------------------------
         ResponseText := CallBulkAPI(Payload, Endpoint);
         ApplyApiResult(ResponseText);
     end;
