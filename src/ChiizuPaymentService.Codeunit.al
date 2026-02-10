@@ -192,66 +192,73 @@ codeunit 50104 "Chiizu Payment Service"
     // --------------------------
     // BULK CANCEL SCHEDULED PAYMENTS
     // --------------------------
-    procedure CancelScheduledInvoices(SelectedInvoiceNos: List of [Code[20]])
+    // --------------------------
+    // CANCEL SCHEDULED PAYMENT (SINGLE)
+    // --------------------------
+    procedure CancelScheduledInvoice(InvoiceNo: Code[20])
     var
-        Setup: Record "Chiizu Setup";
-        SetupMgmt: Codeunit "Chiizu Setup Management";
         InvoiceStatus: Record "Chiizu Invoice Status";
+        Batch: Record "Chiizu Payment Batch";
         Payload: JsonObject;
-        Invoices: JsonArray;
-        Obj: JsonObject;
         ResponseText: Text;
-        InvNo: Code[20];
-        i: Integer;
-        EffectiveStatus: Enum "Chiizu Payment Status";
-        InvalidInvoices: Text;
-        HasInvalid: Boolean;
+        BatchId: Code[50];
     begin
-        if SelectedInvoiceNos.Count() = 0 then
-            Error('No invoices were provided.');
+        // 1. Validation: Must be Scheduled
+        if not InvoiceStatus.Get(InvoiceNo) then
+            Error('Invoice %1 status not found.', InvoiceNo);
 
-        SetupMgmt.GetSetup(Setup);
-        Clear(Payload);
-        Clear(Invoices);
+        if InvoiceStatus.Status <> InvoiceStatus.Status::Scheduled then
+            Error('Only scheduled invoices can be cancelled.');
 
-        HasInvalid := false;
-        InvalidInvoices := '';
+        BatchId := InvoiceStatus."Batch Id";
+        if BatchId = '' then
+            Error('Invoice %1 is not associated with a batch.', InvoiceNo);
 
-        for i := 1 to SelectedInvoiceNos.Count() do begin
-            InvNo := SelectedInvoiceNos.Get(i);
-            EffectiveStatus := EffectiveStatus::Open;
+        // 2. Build Payload { "batchId": "...", "invoiceId": "..." }
+        Payload.Add('batchId', BatchId);
+        Payload.Add('invoiceId', InvoiceNo);
 
-            if InvoiceStatus.Get(InvNo) then
-                EffectiveStatus := InvoiceStatus.Status;
-
-            if EffectiveStatus <> EffectiveStatus::Scheduled then begin
-                HasInvalid := true;
-                InvalidInvoices +=
-                    StrSubstNo('• %1 (status = %2)', InvNo, EffectiveStatus) + '\';
-            end;
-        end;
-
-        if HasInvalid then
-            Error(
-                'Cancel Scheduled Payment failed.' + '\' +
-                'The following invoices are not in Scheduled status:' + '\' +
-                InvalidInvoices
-            );
-
-        for i := 1 to SelectedInvoiceNos.Count() do begin
-            InvNo := SelectedInvoiceNos.Get(i);
-            Clear(Obj);
-            Obj.Add('invoiceNo', InvNo);
-            Obj.Add('action', 'CANCEL');
-            Invoices.Add(Obj);
-        end;
-
-        Payload.Add('batchId', CreateBatchId());
-        Payload.Add('invoices', Invoices);
-        Payload.Add('isCancel', true);
-
+        // 3. Call API
+        // Expected response: { "isCancelled": true, "batchId": "...", "invoiceNo": "..." }
         ResponseText := CallBulkAPI(Payload, '/cancel-scheduled-payment');
-        ApplyApiResult(ResponseText);
+
+        // 4. Handle Result & Local Cleanup
+        HandleCancelResponse(ResponseText, InvoiceNo, BatchId);
+    end;
+
+    local procedure HandleCancelResponse(ResponseText: Text; InvoiceNo: Code[20]; BatchId: Code[50])
+    var
+        ResultObj: JsonObject;
+        IsCancelledToken: JsonToken;
+        InvoiceStatus: Record "Chiizu Invoice Status";
+        Batch: Record "Chiizu Payment Batch";
+    begin
+        if not ResultObj.ReadFrom(ResponseText) then
+            Error('Invalid response from cancellation API.');
+
+        if ResultObj.Get('isCancelled', IsCancelledToken) then
+            if IsCancelledToken.AsValue().AsBoolean() then begin
+
+                // 5. Remove link/Reset status to Open
+                if InvoiceStatus.Get(InvoiceNo) then begin
+                    InvoiceStatus."Batch Id" := '';
+                    InvoiceStatus."Scheduled Date" := 0D;
+                    InvoiceStatus.Status := InvoiceStatus.Status::Open;
+                    InvoiceStatus."Last Updated At" := CurrentDateTime();
+                    InvoiceStatus.Modify(true);
+                end;
+
+                // 6. If batch has no more invoices, delete the batch
+                InvoiceStatus.Reset();
+                InvoiceStatus.SetRange("Batch Id", BatchId);
+
+                if InvoiceStatus.IsEmpty() then begin
+                    if Batch.Get(BatchId) then
+                        Batch.Delete(true);
+                end;
+
+                Message('Payment for invoice %1 cancelled successfully.', InvoiceNo);
+            end;
     end;
 
     // --------------------------
