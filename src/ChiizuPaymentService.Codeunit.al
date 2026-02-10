@@ -20,12 +20,7 @@ codeunit 50104 "Chiizu Payment Service"
     end;
 
 
-    local procedure ExecuteBulkPayment(
-    SelectedInvoiceNos: List of [Code[20]];
-    BankAccountNo: Code[20];
-    Endpoint: Text;
-    ScheduledDate: Date
-)
+    local procedure ExecuteBulkPayment(SelectedInvoiceNos: List of [Code[20]]; BankAccountNo: Code[20]; Endpoint: Text; ScheduledDate: Date)
     var
         Setup: Record "Chiizu Setup";
         SetupMgmt: Codeunit "Chiizu Setup Management";
