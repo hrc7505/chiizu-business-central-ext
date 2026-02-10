@@ -72,10 +72,15 @@ page 50107 "Chiizu Finalize Payment"
                 }
             }
 
-            part(Invoices; "Chiizu Finalize Invoice List")
+            group(InvoicesGroup)
             {
                 Caption = 'Invoices to Pay';
-                ApplicationArea = All;
+
+                part(Invoices; "Chiizu Finalize Invoice List")
+                {
+                    ApplicationArea = All;
+                    UpdatePropagation = Both;
+                }
             }
         }
     }
@@ -96,6 +101,12 @@ page 50107 "Chiizu Finalize Payment"
                 var
                     PaymentService: Codeunit "Chiizu Payment Service";
                 begin
+                    // Sync the list variable with the current subpage view
+                    CurrPage.Invoices.Page.GetRemainingInvoiceNos(InvoiceNos);
+
+                    if InvoiceNos.Count() = 0 then
+                        Error('No invoices left to pay.');
+
                     if BankAccountNo = '' then
                         Error('Please select a bank account.');
 
@@ -177,5 +188,13 @@ page 50107 "Chiizu Finalize Payment"
     begin
         // Push selected invoices into subpage AFTER page is created
         CurrPage.Invoices.Page.SetInvoices(InvoiceNos);
+    end;
+
+    // Update this trigger in the parent page (50107)
+    trigger OnAfterGetCurrRecord()
+    begin
+        // IMPORTANT: Pull the current list FROM the subpage buffer
+        CurrPage.Invoices.Page.GetRemainingInvoiceNos(InvoiceNos);
+        CalculateTotal();
     end;
 }
