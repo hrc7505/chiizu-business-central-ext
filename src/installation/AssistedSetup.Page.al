@@ -85,13 +85,70 @@ page 50101 "Chiizu Assisted Setup"
                     Rec.Modify(true);
                     Message('Chiizu disconnected successfully.');
                 end;
+            }
 
+            action(SelectFundingAccounts)
+            {
+                Caption = 'Select Funding Accounts';
+                Image = BankAccount;
+                ApplicationArea = All;
+                Promoted = true;
+                PromotedCategory = Process;
+                Visible = Rec."Remote Tenant Id" <> '';
+
+                trigger OnAction()
+                var
+                    SetupMgmt: Codeunit "Chiizu Setup Management";
+                    TempAllAcc: Record "Chiizu Funding Account" temporary;
+                    TempSelectedAcc: Record "Chiizu Funding Account" temporary;
+                    AccPage: Page "Chiizu Funding Account List";
+                begin
+                    // 1. Fetch from API
+                    SetupMgmt.FetchFundingAccounts(TempAllAcc);
+
+                    // 2. Load the page buffer
+                    AccPage.SetAccounts(TempAllAcc);
+                    AccPage.LookupMode(true);
+
+                    if AccPage.RunModal() = Action::LookupOK then begin
+                        // 3. Extract the native selection
+                        AccPage.GetSelectedRecords(TempSelectedAcc);
+
+                        if TempSelectedAcc.FindSet() then
+                            repeat
+                                CreateBankAccountFromChiizu(TempSelectedAcc);
+                            until TempSelectedAcc.Next() = 0;
+
+                        Message('%1 account(s) imported successfully.', TempSelectedAcc.Count());
+                    end;
+                end;
             }
         }
     }
 
     trigger OnOpenPage()
+    var
+        setupMgmt: Codeunit "Chiizu Setup Management";
+        Setup: Record "Chiizu Setup";
     begin
-        Rec.Get('SETUP');
+        setupMgmt.GetSetup(Setup);
+    end;
+
+    local procedure CreateBankAccountFromChiizu(ChiizuAcc: Record "Chiizu Funding Account" temporary)
+    var
+        BankAcc: Record "Bank Account";
+    begin
+        // 🔹 HARD CHECK: Exit if the account already exists to prevent errors
+        if BankAcc.Get(ChiizuAcc."Account Id") then
+            exit;
+
+        BankAcc.Init();
+        BankAcc."No." := ChiizuAcc."Account Id"; // Using Account Id as the primary key
+        BankAcc.Name := ChiizuAcc.Name;
+        BankAcc."Bank Account No." := ChiizuAcc."Account Number";
+        BankAcc."Currency Code" := ChiizuAcc."Currency Code";
+
+        // true ensures that standard BC logic (like No. Series) is respected if needed
+        BankAcc.Insert(true);
     end;
 }
