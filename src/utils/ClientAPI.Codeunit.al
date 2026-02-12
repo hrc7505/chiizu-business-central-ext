@@ -17,7 +17,7 @@ codeunit 50110 "Chiizu API Client"
         // -----------------------------
         // Load setup (REQUIRED)
         // -----------------------------
-        SetupMgmt.EnsureConnected();
+        SetupMgmt.GetSetup(Setup);
 
         // -----------------------------
         // Serialize payload
