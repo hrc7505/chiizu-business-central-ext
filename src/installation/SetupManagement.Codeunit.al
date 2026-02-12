@@ -55,6 +55,34 @@ codeunit 50108 "Chiizu Setup Management"
         end;
     end;
 
+    // 🔹 Add this to the Codeunit so the Page Extension can find it
+    procedure GetRemoteAccountBalance(AccountId: Code[50]): Decimal
+    var
+        ApiClient: Codeunit "Chiizu API Client";
+        ResponseJson: JsonObject;
+        AccountArray: JsonArray;
+        Token: JsonToken;
+        ItemObj: JsonObject;
+        i: Integer;
+    begin
+        // Use your GET logic to fetch the accounts
+        ResponseJson := ApiClient.GetJson('/funding-accounts');
+
+        if not ResponseJson.Get('accounts', Token) then exit(0);
+        AccountArray := Token.AsArray();
+
+        for i := 0 to AccountArray.Count() - 1 do begin
+            AccountArray.Get(i, Token);
+            ItemObj := Token.AsObject();
+
+            // Check if this JSON item matches our Bank Account ID
+            if GetJsonValue(ItemObj, 'id') = AccountId then
+                exit(GetJsonDecimalValue(ItemObj, 'balance'));
+        end;
+        exit(0);
+    end;
+
+    // 🔹 Helper for text values
     local procedure GetJsonValue(Obj: JsonObject; KeyName: Text): Text
     var
         Token: JsonToken;
@@ -62,5 +90,15 @@ codeunit 50108 "Chiizu Setup Management"
         if Obj.Get(KeyName, Token) then
             if not Token.AsValue().IsNull() then
                 exit(Token.AsValue().AsText());
+    end;
+
+    // 🔹 Helper for decimal values
+    local procedure GetJsonDecimalValue(Obj: JsonObject; KeyName: Text): Decimal
+    var
+        Token: JsonToken;
+    begin
+        if Obj.Get(KeyName, Token) then
+            if not Token.AsValue().IsNull() then
+                exit(Token.AsValue().AsDecimal());
     end;
 }
