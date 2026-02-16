@@ -19,6 +19,7 @@ page 50140 "Chiizu Payment Webhook API"
                 field(batchId; Rec."Batch Id") { }
                 field(status; Rec.Status) { }
                 field(paymentReference; Rec."Payment Reference") { }
+                field(bankAccountNo; Rec."Bank Account No.") { }
             }
         }
     }

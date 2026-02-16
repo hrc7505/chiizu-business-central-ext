@@ -30,6 +30,33 @@ page 50101 "Chiizu Assisted Setup"
                     Editable = false;
                 }
             }
+
+            group(SyncStatus)
+            {
+                Caption = 'Automation Status';
+                Description = 'Shows the status of the automated synchronization with bank accounts and transactions.';
+                Visible = Rec."Remote Tenant Id" <> '';
+
+                field("Default Bank Posting Group"; Rec."Default Bank Posting Group")
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'Select the General Ledger posting group to automatically assign to new Chiizu Bank Accounts.';
+                    ShowMandatory = true; // Puts a red star so the user knows they need to fill it out
+                }
+                field("Auto-Sync Enabled"; Rec."Auto-Sync Enabled")
+                {
+                    ApplicationArea = All;
+                }
+                field("Last Sync Time"; Rec."Last Sync Time")
+                {
+                    ApplicationArea = All;
+                }
+                field("Last Sync Status"; Rec."Last Sync Status")
+                {
+                    ApplicationArea = All;
+                    StyleExpr = StatusStyle;
+                }
+            }
         }
     }
 
@@ -103,28 +130,57 @@ page 50101 "Chiizu Assisted Setup"
                     TempSelectedAcc: Record "Chiizu Funding Account" temporary;
                     AccPage: Page "Chiizu Funding Account List";
                 begin
-                    // 1. Fetch from API
                     SetupMgmt.FetchFundingAccounts(TempAllAcc);
-
-                    // 2. Load the page buffer
                     AccPage.SetAccounts(TempAllAcc);
                     AccPage.LookupMode(true);
 
                     if AccPage.RunModal() = Action::LookupOK then begin
-                        // 3. Extract the native selection
                         AccPage.GetSelectedRecords(TempSelectedAcc);
-
                         if TempSelectedAcc.FindSet() then
                             repeat
                                 CreateBankAccountFromChiizu(TempSelectedAcc);
                             until TempSelectedAcc.Next() = 0;
 
-                        Message('%1 account(s) imported successfully.', TempSelectedAcc.Count());
+                        // 🔹 AUTOMATION TRIGGER: Start the job after accounts are imported
+                        StartSyncJob();
+
+                        Message('%1 account(s) imported and auto-sync started.', TempSelectedAcc.Count());
                     end;
+                end;
+            }
+
+            action(ForceSync)
+            {
+                Caption = 'Sync Now';
+                Image = RefreshLines;
+                ApplicationArea = All;
+                Promoted = true;
+                PromotedCategory = Process;
+                Visible = Rec."Remote Tenant Id" <> '';
+
+                trigger OnAction()
+                var
+                    SyncJob: Codeunit "Chiizu Auto-Sync Job";
+                begin
+                    SyncJob.Run();
+                    Message('Synchronization completed successfully.');
                 end;
             }
         }
     }
+
+    var
+        StatusStyle: Text;
+
+    trigger OnAfterGetRecord()
+    begin
+        if Rec."Last Sync Status" = 'Success' then
+            StatusStyle := 'Favorable'
+        else if Rec."Last Sync Status" <> '' then
+            StatusStyle := 'Unfavorable'
+        else
+            StatusStyle := 'None';
+    end;
 
     trigger OnOpenPage()
     var
@@ -134,21 +190,47 @@ page 50101 "Chiizu Assisted Setup"
         setupMgmt.GetSetup(Setup);
     end;
 
+    // Inside Page 50101
     local procedure CreateBankAccountFromChiizu(ChiizuAcc: Record "Chiizu Funding Account" temporary)
     var
         BankAcc: Record "Bank Account";
+        SetupMgmt: Codeunit "Chiizu Setup Management";
     begin
-        // 🔹 HARD CHECK: Exit if the account already exists to prevent errors
         if BankAcc.Get(ChiizuAcc."Account Id") then
             exit;
 
+        // 🔹 SAFETY CHECK: Ensure they picked a group before we try to create accounts
+        Rec.TestField("Default Bank Posting Group");
+
         BankAcc.Init();
-        BankAcc."No." := ChiizuAcc."Account Id"; // Using Account Id as the primary key
+        BankAcc."No." := ChiizuAcc."Account Id";
         BankAcc.Name := ChiizuAcc.Name;
         BankAcc."Bank Account No." := ChiizuAcc."Account Number";
         BankAcc."Currency Code" := ChiizuAcc."Currency Code";
 
-        // true ensures that standard BC logic (like No. Series) is respected if needed
+        // 🔹 DYNAMIC ASSIGNMENT
+        BankAcc.Validate("Bank Acc. Posting Group", Rec."Default Bank Posting Group");
+
         BankAcc.Insert(true);
+
+        SetupMgmt.UpdateRemoteBalance(BankAcc);
+    end;
+
+    // Add this helper to the bottom of the page
+    local procedure StartSyncJob()
+    var
+        JobQueueEntry: Record "Job Queue Entry";
+    begin
+        JobQueueEntry.SetRange("Object Type to Run", JobQueueEntry."Object Type to Run"::Codeunit);
+        JobQueueEntry.SetRange("Object ID to Run", Codeunit::"Chiizu Auto-Sync Job");
+        if JobQueueEntry.IsEmpty() then begin
+            JobQueueEntry.Init();
+            JobQueueEntry."Object Type to Run" := JobQueueEntry."Object Type to Run"::Codeunit;
+            JobQueueEntry."Object ID to Run" := Codeunit::"Chiizu Auto-Sync Job";
+            JobQueueEntry."Earliest Start Date/Time" := CurrentDateTime();
+            JobQueueEntry."Recurring Job" := true;
+            JobQueueEntry."No. of Minutes between Runs" := 60;
+            Codeunit.Run(Codeunit::"Job Queue - Enqueue", JobQueueEntry);
+        end;
     end;
 }

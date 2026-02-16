@@ -97,9 +97,6 @@ codeunit 50108 "Chiizu Setup Management"
         if not ResponseJson.Get('transactions', Token) then exit;
         TxnArray := Token.AsArray();
 
-        // Get starting line number
-        ReconLine.SetRange("Bank Account No.", BankAccRecon."Bank Account No.");
-        ReconLine.SetRange("Statement No.", BankAccRecon."Statement No.");
         if ReconLine.FindLast() then
             NextLineNo := ReconLine."Statement Line No." + 10000
         else
@@ -110,7 +107,6 @@ codeunit 50108 "Chiizu Setup Management"
             ItemObj := Token.AsObject();
             TxnId := GetJsonValue(ItemObj, 'id');
 
-            // 🔹 DUPLICATE CHECK: Only insert if this ID hasn't been imported yet
             DuplicateCheck.SetRange("Bank Account No.", BankAccRecon."Bank Account No.");
             DuplicateCheck.SetRange("Transaction ID", TxnId);
             if DuplicateCheck.IsEmpty then begin
@@ -122,9 +118,13 @@ codeunit 50108 "Chiizu Setup Management"
 
                 ReconLine."Transaction ID" := CopyStr(TxnId, 1, MaxStrLen(ReconLine."Transaction ID"));
                 ReconLine."Transaction Date" := GetJsonDateValue(ItemObj, 'date');
-                ReconLine.Description := CopyStr(GetJsonValue(ItemObj, 'description'), 1, 100);
-                ReconLine."Statement Amount" := GetJsonDecimalValue(ItemObj, 'amount');
 
+                // 🔹 FIX: Ensure Description is never empty [cite: 103, 110]
+                ReconLine.Description := CopyStr(GetJsonValue(ItemObj, 'description'), 1, 100);
+                if ReconLine.Description = '' then
+                    ReconLine.Description := 'Chiizu Transaction ' + ReconLine."Transaction ID";
+
+                ReconLine."Statement Amount" := GetJsonDecimalValue(ItemObj, 'amount');
                 ReconLine.Insert();
                 NextLineNo += 10000;
             end;
