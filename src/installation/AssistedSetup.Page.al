@@ -166,6 +166,17 @@ page 50101 "Chiizu Assisted Setup"
                     Message('Synchronization completed successfully.');
                 end;
             }
+
+            action(ViewLogs)
+            {
+                Caption = 'View Sync History';
+                Image = Log;
+                ApplicationArea = All;
+                Promoted = true;
+                PromotedCategory = Process;
+                RunObject = Page "Chiizu Sync Log";
+                ToolTip = 'View the detailed history of the 10-minute automated sync runs.';
+            }
         }
     }
 

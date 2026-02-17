@@ -6,6 +6,7 @@ codeunit 50112 "Chiizu Auto-Sync Job"
         BankAccRecon: Record "Bank Acc. Reconciliation";
         Setup: Record "Chiizu Setup";
         SetupMgmt: Codeunit "Chiizu Setup Management";
+        Log: Record "Chiizu Sync Log";
     begin
         // 1. Filter for accounts that have been linked to Chiizu
         BankAcc.SetFilter("Chiizu Remote Balance", '>=%1', 0);
@@ -44,6 +45,13 @@ codeunit 50112 "Chiizu Auto-Sync Job"
             Setup."Last Sync Status" := 'Success';
             Setup."Last Sync Time" := CurrentDateTime();
             Setup.Modify();
+
+            // Write to History Log
+            Log.Init();
+            Log."Sync DateTime" := CurrentDateTime();
+            Log.Status := Log.Status::Success;
+            Log.Message := 'Automated sync completed for all linked accounts.';
+            Log.Insert();
         end;
     end;
 }
