@@ -93,22 +93,31 @@ codeunit 50108 "Chiizu Setup Management"
         i: Integer;
         NextLineNo: Integer;
     begin
+        // 1. Fetch transactions for the specific bank account from the API
         ResponseJson := ApiClient.GetJson('/funding-accounts/' + BankAccRecon."Bank Account No." + '/transactions');
         if not ResponseJson.Get('transactions', Token) then exit;
         TxnArray := Token.AsArray();
 
+        // 2. Determine the next available Line No. within this specific statement
+        ReconLine.SetRange("Statement Type", BankAccRecon."Statement Type");
+        ReconLine.SetRange("Bank Account No.", BankAccRecon."Bank Account No.");
+        ReconLine.SetRange("Statement No.", BankAccRecon."Statement No.");
         if ReconLine.FindLast() then
             NextLineNo := ReconLine."Statement Line No." + 10000
         else
             NextLineNo := 10000;
 
+        // 3. Process each transaction from the JSON array
         for i := 0 to TxnArray.Count() - 1 do begin
             TxnArray.Get(i, Token);
             ItemObj := Token.AsObject();
             TxnId := GetJsonValue(ItemObj, 'id');
 
+            // 4. Duplicate Check: Search for this ID in the standard field
+            DuplicateCheck.SetRange("Statement Type", BankAccRecon."Statement Type");
             DuplicateCheck.SetRange("Bank Account No.", BankAccRecon."Bank Account No.");
-            DuplicateCheck.SetRange("Transaction ID", TxnId);
+            DuplicateCheck.SetRange("Transaction ID", TxnId); // Uses standard Field 70
+
             if DuplicateCheck.IsEmpty then begin
                 ReconLine.Init();
                 ReconLine."Statement Type" := BankAccRecon."Statement Type";
@@ -116,15 +125,12 @@ codeunit 50108 "Chiizu Setup Management"
                 ReconLine."Statement No." := BankAccRecon."Statement No.";
                 ReconLine."Statement Line No." := NextLineNo;
 
+                // Use CopyStr to safely fit the API ID into the 50-character field
                 ReconLine."Transaction ID" := CopyStr(TxnId, 1, MaxStrLen(ReconLine."Transaction ID"));
                 ReconLine."Transaction Date" := GetJsonDateValue(ItemObj, 'date');
-
-                // 🔹 FIX: Ensure Description is never empty [cite: 103, 110]
-                ReconLine.Description := CopyStr(GetJsonValue(ItemObj, 'description'), 1, 100);
-                if ReconLine.Description = '' then
-                    ReconLine.Description := 'Chiizu Transaction ' + ReconLine."Transaction ID";
-
+                ReconLine.Description := CopyStr(GetJsonValue(ItemObj, 'description'), 1, MaxStrLen(ReconLine.Description));
                 ReconLine."Statement Amount" := GetJsonDecimalValue(ItemObj, 'amount');
+
                 ReconLine.Insert();
                 NextLineNo += 10000;
             end;

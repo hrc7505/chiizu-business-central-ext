@@ -223,14 +223,37 @@ page 50101 "Chiizu Assisted Setup"
     begin
         JobQueueEntry.SetRange("Object Type to Run", JobQueueEntry."Object Type to Run"::Codeunit);
         JobQueueEntry.SetRange("Object ID to Run", Codeunit::"Chiizu Auto-Sync Job");
+
         if JobQueueEntry.IsEmpty() then begin
             JobQueueEntry.Init();
             JobQueueEntry."Object Type to Run" := JobQueueEntry."Object Type to Run"::Codeunit;
             JobQueueEntry."Object ID to Run" := Codeunit::"Chiizu Auto-Sync Job";
             JobQueueEntry."Earliest Start Date/Time" := CurrentDateTime();
+
+            // --- Frequency: 10 Minutes ---
             JobQueueEntry."Recurring Job" := true;
-            JobQueueEntry."No. of Minutes between Runs" := 60;
+            JobQueueEntry."No. of Minutes between Runs" := 10;
+
+            // --- Daily Recurrence (Every Day) ---
+            JobQueueEntry."Run on Mondays" := true;
+            JobQueueEntry."Run on Tuesdays" := true;
+            JobQueueEntry."Run on Wednesdays" := true;
+            JobQueueEntry."Run on Thursdays" := true;
+            JobQueueEntry."Run on Fridays" := true;
+            JobQueueEntry."Run on Saturdays" := true;
+            JobQueueEntry."Run on Sundays" := true;
+
+            // Enqueue the job immediately
             Codeunit.Run(Codeunit::"Job Queue - Enqueue", JobQueueEntry);
+        end else begin
+            // Ensure existing job is active and enabled
+            JobQueueEntry.FindFirst();
+            if JobQueueEntry.Status = JobQueueEntry.Status::"On Hold" then
+                JobQueueEntry.Restart();
         end;
+
+        // Update Setup record to reflect automation is active
+        Rec."Auto-Sync Enabled" := true;
+        Rec.Modify();
     end;
 }

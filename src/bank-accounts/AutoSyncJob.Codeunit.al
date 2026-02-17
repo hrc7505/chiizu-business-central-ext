@@ -6,38 +6,43 @@ codeunit 50112 "Chiizu Auto-Sync Job"
         BankAccRecon: Record "Bank Acc. Reconciliation";
         Setup: Record "Chiizu Setup";
         SetupMgmt: Codeunit "Chiizu Setup Management";
-        MatchBankRecLines: Codeunit "Match Bank Rec. Lines";
     begin
-        // 1. Filter for Chiizu-linked accounts
+        // 1. Filter for accounts that have been linked to Chiizu
         BankAcc.SetFilter("Chiizu Remote Balance", '>=%1', 0);
         if BankAcc.IsEmpty() then exit;
 
         if BankAcc.FindSet() then
             repeat
-                SetupMgmt.UpdateRemoteBalance(BankAcc); // [cite: 15, 92]
+                // 2. Update the Balance field on the Bank Account card
+                SetupMgmt.UpdateRemoteBalance(BankAcc);
 
-                BankAccRecon.SetRange("Bank Account No.", BankAcc."No."); // [cite: 31, 93]
+                // 3. Find or Create an active Reconciliation Header
+                BankAccRecon.SetRange("Bank Account No.", BankAcc."No.");
+                BankAccRecon.SetRange("Statement Type", BankAccRecon."Statement Type"::"Bank Reconciliation");
                 if not BankAccRecon.FindFirst() then begin
                     BankAccRecon.Init();
                     BankAccRecon."Statement Type" := BankAccRecon."Statement Type"::"Bank Reconciliation";
                     BankAccRecon."Bank Account No." := BankAcc."No.";
-                    BankAccRecon."Statement No." := BankAcc."Last Statement No." + '1';
-                    BankAccRecon.Insert(); // [cite: 61, 70, 74]
+                    // Use IncStr to properly increment numeric strings (e.g., "10" becomes "11")
+                    BankAccRecon."Statement No." := IncStr(BankAcc."Last Statement No.");
+                    if BankAccRecon."Statement No." = '' then BankAccRecon."Statement No." := '1';
+                    BankAccRecon.Insert();
                 end;
 
-                SetupMgmt.ImportToBankReconciliation(BankAccRecon); // [cite: 59, 98]
+                // 4. Import new transactions into the lines
+                SetupMgmt.ImportToBankReconciliation(BankAccRecon);
 
-                // 🔹 SILENT AUTO-MATCH: This stops the multiple alert boxes 
-                Commit(); // Necessary before Codeunit.Run inside a loop
+                // 5. Run Auto-Match
+                // We use Commit because Codeunit.Run is not allowed in a write transaction
+                Commit();
                 if not Codeunit.Run(Codeunit::"Match Bank Rec. Lines", BankAccRecon) then;
 
             until BankAcc.Next() = 0;
 
-        // 6. Log results to Setup
+        // 6. Log completion status in Setup
         if Setup.Get('SETUP') then begin
             Setup."Last Sync Status" := 'Success';
             Setup."Last Sync Time" := CurrentDateTime();
-            Setup."Auto-Sync Enabled" := true;
             Setup.Modify();
         end;
     end;
