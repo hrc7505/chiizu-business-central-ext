@@ -1,6 +1,6 @@
 codeunit 50143 "Chiizu Payment Posting Helper"
 {
-    procedure PostBatch(var Batch: Record "Chiizu Payment Batch")
+    procedure PostBatch(var Batch: Record "Chiizu Payment Batch"; BankAccountNo: Code[20])
     var
         GenJnlLine: Record "Gen. Journal Line";
         GenJnlPost: Codeunit "Gen. Jnl.-Post";
@@ -8,6 +8,9 @@ codeunit 50143 "Chiizu Payment Posting Helper"
         VLE: Record "Vendor Ledger Entry";
         AmountToPay: Decimal;
     begin
+        if BankAccountNo = '' then
+            Error('Bank Account No. cannot be empty for a paid batch.');
+
         EnsureJournalExists();
 
         InvoiceStatus.SetRange("Batch Id", Batch."Batch Id");
@@ -47,7 +50,7 @@ codeunit 50143 "Chiizu Payment Posting Helper"
 
             // Bank
             GenJnlLine.Validate("Bal. Account Type", GenJnlLine."Bal. Account Type"::"Bank Account");
-            GenJnlLine.Validate("Bal. Account No.", 'CHECKING');
+            GenJnlLine.Validate("Bal. Account No.", BankAccountNo);
 
             // ✅ Correct amount
             GenJnlLine.Validate(Amount, AmountToPay);

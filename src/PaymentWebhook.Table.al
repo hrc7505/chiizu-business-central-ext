@@ -9,6 +9,7 @@ table 50149 "Chiizu Payment Webhook"
         field(3; Status; Enum "Chiizu Payment Status") { }
         field(4; "Payment Reference"; Code[50]) { }
         field(5; "Received At"; DateTime) { }
+        field(6; "Bank Account No."; Code[20]) { }
     }
 
     keys
