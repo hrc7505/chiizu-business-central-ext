@@ -80,7 +80,7 @@ codeunit 50108 "Chiizu Setup Management"
         end;
     end;
 
-    procedure ImportToBankReconciliation(BankAccRecon: Record "Bank Acc. Reconciliation")
+    procedure ImportToBankReconciliation(var BankAccRecon: Record "Bank Acc. Reconciliation")
     var
         ApiClient: Codeunit "Chiizu API Client";
         ReconLine: Record "Bank Acc. Reconciliation Line";
@@ -93,12 +93,17 @@ codeunit 50108 "Chiizu Setup Management"
         i: Integer;
         NextLineNo: Integer;
     begin
-        // 1. Fetch transactions for the specific bank account from the API
+        // --- FIX: Update Header target balance first ---
+        // This prevents the StatementEndingBalanceErr because it aligns the "Finish Line"
+        BankAccRecon.Validate("Statement Ending Balance", GetRemoteAccountBalance(BankAccRecon."Bank Account No."));
+        BankAccRecon.Validate("Statement Date", Today());
+        BankAccRecon.Modify(true);
+
         ResponseJson := ApiClient.GetJson('/funding-accounts/' + BankAccRecon."Bank Account No." + '/transactions');
         if not ResponseJson.Get('transactions', Token) then exit;
         TxnArray := Token.AsArray();
 
-        // 2. Determine the next available Line No. within this specific statement
+        // Find next line number
         ReconLine.SetRange("Statement Type", BankAccRecon."Statement Type");
         ReconLine.SetRange("Bank Account No.", BankAccRecon."Bank Account No.");
         ReconLine.SetRange("Statement No.", BankAccRecon."Statement No.");
@@ -107,16 +112,14 @@ codeunit 50108 "Chiizu Setup Management"
         else
             NextLineNo := 10000;
 
-        // 3. Process each transaction from the JSON array
         for i := 0 to TxnArray.Count() - 1 do begin
             TxnArray.Get(i, Token);
             ItemObj := Token.AsObject();
             TxnId := GetJsonValue(ItemObj, 'id');
 
-            // 4. Duplicate Check: Search for this ID in the standard field
-            DuplicateCheck.SetRange("Statement Type", BankAccRecon."Statement Type");
+            // Check if transaction already imported
             DuplicateCheck.SetRange("Bank Account No.", BankAccRecon."Bank Account No.");
-            DuplicateCheck.SetRange("Transaction ID", TxnId); // Uses standard Field 70
+            DuplicateCheck.SetRange("Transaction ID", TxnId);
 
             if DuplicateCheck.IsEmpty then begin
                 ReconLine.Init();
@@ -125,15 +128,37 @@ codeunit 50108 "Chiizu Setup Management"
                 ReconLine."Statement No." := BankAccRecon."Statement No.";
                 ReconLine."Statement Line No." := NextLineNo;
 
-                // Use CopyStr to safely fit the API ID into the 50-character field
-                ReconLine."Transaction ID" := CopyStr(TxnId, 1, MaxStrLen(ReconLine."Transaction ID"));
-                ReconLine."Transaction Date" := GetJsonDateValue(ItemObj, 'date');
+                // Validate triggers internal BC math
+                ReconLine.Validate("Transaction Date", GetJsonDateValue(ItemObj, 'date'));
                 ReconLine.Description := CopyStr(GetJsonValue(ItemObj, 'description'), 1, MaxStrLen(ReconLine.Description));
-                ReconLine."Statement Amount" := GetJsonDecimalValue(ItemObj, 'amount');
+                ReconLine.Validate("Statement Amount", GetJsonDecimalValue(ItemObj, 'amount'));
+                ReconLine."Transaction ID" := CopyStr(TxnId, 1, MaxStrLen(ReconLine."Transaction ID"));
 
-                ReconLine.Insert();
+                ReconLine.Insert(true);
                 NextLineNo += 10000;
             end;
+        end;
+    end;
+
+    // Helper to get the balance specifically for a bank account ID
+    procedure GetRemoteAccountBalance(AccountId: Code[50]): Decimal
+    var
+        ApiClient: Codeunit "Chiizu API Client";
+        ResponseJson: JsonObject;
+        AccountArray: JsonArray;
+        Token: JsonToken;
+        ItemObj: JsonObject;
+        i: Integer;
+    begin
+        ResponseJson := ApiClient.GetJson('/funding-accounts');
+        if not ResponseJson.Get('accounts', Token) then exit(0);
+        AccountArray := Token.AsArray();
+
+        for i := 0 to AccountArray.Count() - 1 do begin
+            AccountArray.Get(i, Token);
+            ItemObj := Token.AsObject();
+            if GetJsonValue(ItemObj, 'id') = AccountId then
+                exit(GetJsonDecimalValue(ItemObj, 'balance'));
         end;
     end;
 
