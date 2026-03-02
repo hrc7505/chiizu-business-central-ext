@@ -92,18 +92,21 @@ codeunit 50108 "Chiizu Setup Management"
         TxnId: Text;
         i: Integer;
         NextLineNo: Integer;
+        RemoteBalance: Decimal;
     begin
-        // --- FIX: Update Header target balance first ---
-        // This prevents the StatementEndingBalanceErr because it aligns the "Finish Line"
-        BankAccRecon.Validate("Statement Ending Balance", GetRemoteAccountBalance(BankAccRecon."Bank Account No."));
+        // 1. Update Header with the Real-Time Balance from Chiizu
+        // This balance acts as the "Total to Match" for the user.
+        RemoteBalance := GetRemoteAccountBalance(BankAccRecon."Bank Account No.");
+        BankAccRecon.Validate("Statement Ending Balance", RemoteBalance);
         BankAccRecon.Validate("Statement Date", Today());
         BankAccRecon.Modify(true);
 
+        // 2. Fetch Transactions from API
         ResponseJson := ApiClient.GetJson('/funding-accounts/' + BankAccRecon."Bank Account No." + '/transactions');
         if not ResponseJson.Get('transactions', Token) then exit;
         TxnArray := Token.AsArray();
 
-        // Find next line number
+        // 3. Determine the starting Line No for this statement
         ReconLine.SetRange("Statement Type", BankAccRecon."Statement Type");
         ReconLine.SetRange("Bank Account No.", BankAccRecon."Bank Account No.");
         ReconLine.SetRange("Statement No.", BankAccRecon."Statement No.");
@@ -112,13 +115,18 @@ codeunit 50108 "Chiizu Setup Management"
         else
             NextLineNo := 10000;
 
+        // 4. Loop through API transactions
         for i := 0 to TxnArray.Count() - 1 do begin
             TxnArray.Get(i, Token);
             ItemObj := Token.AsObject();
             TxnId := GetJsonValue(ItemObj, 'id');
 
-            // Check if transaction already imported
+            // 🔹 IMPROVED DUPLICATE CHECK: 
+            // We only skip if the transaction ID already exists in THIS specific open statement.
+            DuplicateCheck.Reset();
+            DuplicateCheck.SetRange("Statement Type", BankAccRecon."Statement Type");
             DuplicateCheck.SetRange("Bank Account No.", BankAccRecon."Bank Account No.");
+            DuplicateCheck.SetRange("Statement No.", BankAccRecon."Statement No.");
             DuplicateCheck.SetRange("Transaction ID", TxnId);
 
             if DuplicateCheck.IsEmpty then begin
@@ -128,10 +136,13 @@ codeunit 50108 "Chiizu Setup Management"
                 ReconLine."Statement No." := BankAccRecon."Statement No.";
                 ReconLine."Statement Line No." := NextLineNo;
 
-                // Validate triggers internal BC math
+                // Use Validate to trigger BC's internal logic for dates and amounts
                 ReconLine.Validate("Transaction Date", GetJsonDateValue(ItemObj, 'date'));
                 ReconLine.Description := CopyStr(GetJsonValue(ItemObj, 'description'), 1, MaxStrLen(ReconLine.Description));
+
+                // 🔹 DEBIT/CREDIT: BC handles the sign (+/-) automatically based on the Decimal value
                 ReconLine.Validate("Statement Amount", GetJsonDecimalValue(ItemObj, 'amount'));
+
                 ReconLine."Transaction ID" := CopyStr(TxnId, 1, MaxStrLen(ReconLine."Transaction ID"));
 
                 ReconLine.Insert(true);
