@@ -178,9 +178,15 @@ codeunit 50108 "Chiizu Setup Management"
     var
         Token: JsonToken;
         DateVar: Date;
+        DateText: Text;
     begin
-        if Obj.Get(KeyName, Token) then
-            if Evaluate(DateVar, CopyStr(Token.AsValue().AsText(), 1, 10)) then exit(DateVar);
+        if Obj.Get(KeyName, Token) then begin
+            DateText := CopyStr(Token.AsValue().AsText(), 1, 10);
+            // 🔹 ADD ', 9' to the Evaluate function to strictly parse YYYY-MM-DD format
+            if Evaluate(DateVar, DateText, 9) then
+                exit(DateVar);
+        end;
+        exit(0D);
     end;
 
     local procedure GetJsonValue(Obj: JsonObject; KeyName: Text): Text
@@ -197,5 +203,63 @@ codeunit 50108 "Chiizu Setup Management"
     begin
         if Obj.Get(KeyName, Token) then
             if not Token.AsValue().IsNull() then exit(Token.AsValue().AsDecimal());
+    end;
+
+    procedure CreateBankAccountFromChiizuV2(ChiizuAcc: Record "Chiizu Funding Account" temporary)
+    var
+        BankAcc: Record "Bank Account";
+        BankExImpSetup: Record "Bank Export/Import Setup";
+        DataExchDef: Record "Data Exch. Def";
+        ChiizuSetup: Record "Chiizu Setup";
+    begin
+        if not ChiizuSetup.Get('SETUP') then exit;
+        if BankAcc.Get(ChiizuAcc."Account Id") then exit;
+        ChiizuSetup.TestField("Default Bank Posting Group");
+
+        // 1. DATA EXCH DEFINITION (STEP 1 OF MICROSOFT'S FLOW)
+        if not DataExchDef.Get('CHIIZU') then begin
+            DataExchDef.Init();
+            DataExchDef.Code := 'CHIIZU';
+            DataExchDef.Name := 'Chiizu API Sync';
+            DataExchDef.Type := DataExchDef.Type::"Bank Statement Import";
+
+            // 🔹 THE FIX: Put the REAL API here! It runs first, fetches the data, and writes the lines.
+            DataExchDef."Ext. Data Handling Codeunit" := Codeunit::"Chiizu Statement Import"; // 50119
+
+            DataExchDef.Insert(true);
+        end else begin
+            // Self-healing to fix your current database
+            DataExchDef."Ext. Data Handling Codeunit" := Codeunit::"Chiizu Statement Import"; // 50119
+            DataExchDef.Modify(true);
+        end;
+
+        // 2. BANK EXPORT/IMPORT SETUP (STEP 2 OF MICROSOFT'S FLOW)
+        if not BankExImpSetup.Get('CHIIZU') then begin
+            BankExImpSetup.Init();
+            BankExImpSetup.Code := 'CHIIZU';
+            BankExImpSetup.Name := 'Chiizu API Sync';
+            BankExImpSetup.Direction := BankExImpSetup.Direction::Import;
+
+            // 🔹 THE FIX: Put the EMPTY DUMMY here! It runs second and safely stops BC from crashing.
+            BankExImpSetup."Processing Codeunit ID" := Codeunit::"Chiizu File Bypass"; // 50120
+
+            BankExImpSetup."Data Exch. Def. Code" := 'CHIIZU';
+            BankExImpSetup.Insert(true);
+        end else begin
+            // Self-healing to fix your current database
+            BankExImpSetup."Processing Codeunit ID" := Codeunit::"Chiizu File Bypass"; // 50120
+            BankExImpSetup."Data Exch. Def. Code" := 'CHIIZU';
+            BankExImpSetup.Modify(true);
+        end;
+
+        // 3. CREATE BANK ACCOUNT
+        BankAcc.Init();
+        BankAcc."No." := ChiizuAcc."Account Id";
+        BankAcc.Name := CopyStr(ChiizuAcc.Name, 1, MaxStrLen(BankAcc.Name));
+        BankAcc."Bank Account No." := ChiizuAcc."Account Number";
+        BankAcc."Currency Code" := ChiizuAcc."Currency Code";
+        BankAcc.Validate("Bank Acc. Posting Group", ChiizuSetup."Default Bank Posting Group");
+        BankAcc."Bank Statement Import Format" := 'CHIIZU';
+        BankAcc.Insert(true);
     end;
 }
