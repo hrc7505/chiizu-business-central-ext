@@ -6,52 +6,48 @@ codeunit 50112 "Chiizu Auto-Sync Job"
         BankAccRecon: Record "Bank Acc. Reconciliation";
         Setup: Record "Chiizu Setup";
         SetupMgmt: Codeunit "Chiizu Setup Management";
-        Log: Record "Chiizu Sync Log";
+        TargetStatementNo: Code[20];
     begin
-        // 1. Filter for accounts that have been linked to Chiizu
+        // 1. Filter for accounts linked to Chiizu
         BankAcc.SetFilter("Chiizu Remote Balance", '>=%1', 0);
         if BankAcc.IsEmpty() then exit;
 
         if BankAcc.FindSet() then
             repeat
-                // 2. Update the Balance field on the Bank Account card
+                // 2. Refresh the Remote Balance on the Bank Account card
                 SetupMgmt.UpdateRemoteBalance(BankAcc);
 
-                // 3. Find or Create an active Reconciliation Header
-                BankAccRecon.SetRange("Bank Account No.", BankAcc."No.");
-                BankAccRecon.SetRange("Statement Type", BankAccRecon."Statement Type"::"Bank Reconciliation");
-                if not BankAccRecon.FindFirst() then begin
+                // 3. Determine the Statement Number
+                TargetStatementNo := IncStr(BankAcc."Last Statement No.");
+                if TargetStatementNo = '' then TargetStatementNo := '1';
+
+                // 4. GET existing or CREATE new reconciliation header
+                // We keep it open so the user can find it in the "Bank Acc. Reconciliation" list
+                if not BankAccRecon.Get(BankAccRecon."Statement Type"::"Bank Reconciliation", BankAcc."No.", TargetStatementNo) then begin
                     BankAccRecon.Init();
                     BankAccRecon."Statement Type" := BankAccRecon."Statement Type"::"Bank Reconciliation";
                     BankAccRecon."Bank Account No." := BankAcc."No.";
-                    // Use IncStr to properly increment numeric strings (e.g., "10" becomes "11")
-                    BankAccRecon."Statement No." := IncStr(BankAcc."Last Statement No.");
-                    if BankAccRecon."Statement No." = '' then BankAccRecon."Statement No." := '1';
-                    BankAccRecon.Insert();
+                    BankAccRecon."Statement No." := TargetStatementNo;
+                    // Note: ImportToBankReconciliation should update the Statement Ending Balance later
+                    BankAccRecon.Insert(true);
                 end;
 
-                // 4. Import new transactions into the lines
+                // 5. Import only the Statement Lines (Left Side)
+                // Your duplicate check in this procedure ensures lines aren't added twice
                 SetupMgmt.ImportToBankReconciliation(BankAccRecon);
 
-                // 5. Run Auto-Match
-                // We use Commit because Codeunit.Run is not allowed in a write transaction
-                Commit();
-                if not Codeunit.Run(Codeunit::"Match Bank Rec. Lines", BankAccRecon) then;
+            // --- MANUAL MATCHING MODE ---
+            // We have removed MatchBankRecLines.BankAccReconciliationAutoMatch
+            // and the balance check. The user will now open BC, see the lines,
+            // and match them to Ledger Entries (Right Side) manually.
 
             until BankAcc.Next() = 0;
 
-        // 6. Log completion status in Setup
+        // 6. Update Sync Status
         if Setup.Get('SETUP') then begin
             Setup."Last Sync Status" := 'Success';
             Setup."Last Sync Time" := CurrentDateTime();
             Setup.Modify();
-
-            // Write to History Log
-            Log.Init();
-            Log."Sync DateTime" := CurrentDateTime();
-            Log.Status := Log.Status::Success;
-            Log.Message := 'Automated sync completed for all linked accounts.';
-            Log.Insert();
         end;
     end;
 }

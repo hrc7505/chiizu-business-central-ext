@@ -149,6 +149,40 @@ page 50101 "Chiizu Assisted Setup"
                 end;
             }
 
+            action(FundingAccountV2)
+            {
+                Image = BankAccount;
+                ApplicationArea = All;
+                Promoted = true;
+                PromotedCategory = Process;
+                Visible = Rec."Remote Tenant Id" <> '';
+
+                trigger OnAction()
+                var
+                    SetupMgmt: Codeunit "Chiizu Setup Management";
+                    TempAllAcc: Record "Chiizu Funding Account" temporary;
+                    TempSelectedAcc: Record "Chiizu Funding Account" temporary;
+                    AccPage: Page "Chiizu Funding Account List";
+                begin
+                    SetupMgmt.FetchFundingAccounts(TempAllAcc);
+                    AccPage.SetAccounts(TempAllAcc);
+                    AccPage.LookupMode(true);
+
+                    if AccPage.RunModal() = Action::LookupOK then begin
+                        AccPage.GetSelectedRecords(TempSelectedAcc);
+                        if TempSelectedAcc.FindSet() then
+                            repeat
+                                // 🔹 CALL THE NEW AUTOMATED FUNCTION
+                                SetupMgmt.CreateBankAccountFromChiizuV2(TempSelectedAcc);
+                            until TempSelectedAcc.Next() = 0;
+
+                        StartSyncJob();
+
+                        Message('%1 account(s) imported and configured successfully.', TempSelectedAcc.Count());
+                    end;
+                end;
+            }
+
             action(ForceSync)
             {
                 Caption = 'Sync Now';

@@ -6,7 +6,7 @@
       "type": "al",
       "request": "launch",
       "environmentType": "Sandbox",
-      "environmentName": "chiizu-sandbox", // 👈 Must match your sandbox name exactly
+      "environmentName": "chiizu-sandbox-2", // 👈 Must match your sandbox name exactly
       "authentication": "AAD",
       "tenant": "wecreateapp.onmicrosoft.com",
       "breakOnError": true,
