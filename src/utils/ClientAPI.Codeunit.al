@@ -45,9 +45,7 @@ codeunit 50110 "Chiizu API Client"
         Request.GetHeaders(RequestHeaders);
         RequestHeaders.Add('Authorization', 'Bearer ' + Setup."API Key");
 
-
-        if not Client.Send(Request, Response) then
-            Error('Failed to reach Chiizu API.');
+        if not Client.Send(Request, Response) then Error('Failed to reach Chiizu API.');
 
         Response.Content.ReadAs(ResponseText);
 
@@ -55,11 +53,7 @@ codeunit 50110 "Chiizu API Client"
         // HTTP error handling
         // -----------------------------
         if not Response.IsSuccessStatusCode() then
-            Error(
-                'Chiizu API error (%1): %2',
-                Response.HttpStatusCode(),
-                ResponseText
-            );
+            Error('Chiizu API error (%1): %2', Response.HttpStatusCode(), ResponseText);
 
         // -----------------------------
         // Parse JSON
@@ -87,8 +81,7 @@ codeunit 50110 "Chiizu API Client"
         Request.GetHeaders(RequestHeaders);
         RequestHeaders.Add('Authorization', 'Bearer ' + Setup."API Key");
 
-        if not Client.Send(Request, Response) then
-            Error('Failed to reach Chiizu API.');
+        if not Client.Send(Request, Response) then Error('Failed to reach Chiizu API.');
 
         Response.Content.ReadAs(ResponseText);
 
@@ -97,5 +90,41 @@ codeunit 50110 "Chiizu API Client"
 
         JsonResp.ReadFrom(ResponseText);
         exit(JsonResp);
+    end;
+
+    // --- GLOBAL JSON HELPERS ---
+    procedure GetJsonString(Obj: JsonObject; KeyName: Text): Text
+    var
+        Token: JsonToken;
+    begin
+        if Obj.Get(KeyName, Token) then
+            if not Token.AsValue().IsNull() then exit(Token.AsValue().AsText());
+        exit('');
+    end;
+
+    procedure GetJsonDate(Obj: JsonObject; KeyName: Text): Date
+    var
+        Token: JsonToken;
+        DateVar: Date;
+        DateText: Text;
+    begin
+        if Obj.Get(KeyName, Token) then begin
+            if not Token.AsValue().IsNull() then begin
+                DateText := CopyStr(Token.AsValue().AsText(), 1, 10);
+                if Evaluate(DateVar, DateText, 9) then exit(DateVar);
+            end;
+        end;
+        exit(0D);
+    end;
+
+    procedure GetJsonDecimal(Obj: JsonObject; KeyName: Text): Decimal
+    var
+        Token: JsonToken;
+        ResultDec: Decimal;
+    begin
+        if Obj.Get(KeyName, Token) then
+            if not Token.AsValue().IsNull() then
+                if Evaluate(ResultDec, Token.AsValue().AsText()) then exit(ResultDec);
+        exit(0.0);
     end;
 }
