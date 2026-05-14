@@ -191,7 +191,7 @@ codeunit 1000004 "Chiizu Payment Service"
         InvoiceStatus: Record "Chiizu Invoice Status";
         Payload: JsonObject;
         ResponseText: Text;
-        BatchId: Code[20];
+        BatchId: Code[50];
     begin
         // 1. Validation: Must be Scheduled
         if not InvoiceStatus.Get(InvoiceNo) then
@@ -216,7 +216,7 @@ codeunit 1000004 "Chiizu Payment Service"
         this.HandleCancelResponse(ResponseText, InvoiceNo, BatchId);
     end;
 
-    local procedure HandleCancelResponse(ResponseText: Text; InvoiceNo: Code[20]; BatchId: Code[20])
+    local procedure HandleCancelResponse(ResponseText: Text; InvoiceNo: Code[20]; BatchId: Code[50])
     var
         InvoiceStatus: Record "Chiizu Invoice Status";
         Batch: Record "Chiizu Payment Batch";
