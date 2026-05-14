@@ -1,4 +1,6 @@
-table 50121 "Chiizu Scheduled Payment"
+namespace Chiizu;
+
+table 1000021 "Chiizu Scheduled Payment"
 {
     DataClassification = CustomerContent;
 

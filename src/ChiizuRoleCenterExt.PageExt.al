@@ -1,4 +1,9 @@
-pageextension 50102 "ChiizuRoleCenterExt" extends "Business Manager Role Center"
+namespace Chiizu;
+
+using Microsoft.Finance.RoleCenters;
+using Microsoft.Purchases.History;
+
+pageextension 1000002 "ChiizuRoleCenterExt" extends "Business Manager Role Center"
 {
     actions
     {
@@ -8,9 +13,10 @@ pageextension 50102 "ChiizuRoleCenterExt" extends "Business Manager Role Center"
             {
                 Caption = 'Chiizu';
 
-                action(OpenPurchaseInvoices)
+                action(ChiizuOpenPurchaseInvoices)
                 {
                     Caption = 'Chiizu | Posted Purchase Invoices';
+                    ToolTip = 'Open the list of posted purchase invoices to view or process payments via Chiizu.';
                     ApplicationArea = All;
                     RunObject = page "Posted Purchase Invoices";
                 }

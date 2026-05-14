@@ -1,4 +1,9 @@
-page 50107 "Chiizu Finalize Payment"
+namespace Chiizu.Finalize;
+using Chiizu;
+using Microsoft.Bank.BankAccount;
+using Microsoft.Purchases.Payables;
+
+page 1000007 "Chiizu Finalize Payment"
 {
     PageType = Card;
     ApplicationArea = All;
@@ -16,6 +21,7 @@ page 50107 "Chiizu Finalize Payment"
                 field(TotalAmount; TotalAmount)
                 {
                     Caption = 'Total Amount';
+                    ToolTip = 'Displays the total amount of all invoices to be paid.';
                     ApplicationArea = All;
                     Editable = false;
                 }
@@ -28,6 +34,7 @@ page 50107 "Chiizu Finalize Payment"
                 field(BankAccountNo; BankAccountNo)
                 {
                     Caption = 'Bank Account';
+                    ToolTip = 'Select the bank account from which the payment will be made.';
                     ApplicationArea = All;
                     TableRelation = "Bank Account"."No.";
 
@@ -37,12 +44,11 @@ page 50107 "Chiizu Finalize Payment"
                     begin
                         Clear(BankAccountName);
 
-                        if BankAccountNo <> '' then begin
+                        if BankAccountNo <> '' then
                             if BankAcc.Get(BankAccountNo) then
                                 BankAccountName := BankAcc.Name
                             else
                                 Error('Bank account not found: %1', BankAccountNo);
-                        end;
                     end;
                 }
 
@@ -51,6 +57,7 @@ page 50107 "Chiizu Finalize Payment"
                     Caption = 'Bank Account Name';
                     ApplicationArea = All;
                     Editable = false;
+                    ToolTip = 'Specifies the name of the selected bank account.';
                 }
             }
 
@@ -63,6 +70,7 @@ page 50107 "Chiizu Finalize Payment"
                 {
                     Caption = 'Scheduled Date';
                     ApplicationArea = All;
+                    ToolTip = 'Specifies the date when the payment is scheduled to be processed.';
 
                     trigger OnValidate()
                     begin
@@ -95,6 +103,8 @@ page 50107 "Chiizu Finalize Payment"
                 Image = Payment;
                 Promoted = true;
                 PromotedCategory = Process;
+                PromotedOnly = true;
+                ToolTip = 'Confirm and initiate the payment for the selected invoices immediately.';
                 Visible = FinalizeMode = FinalizeMode::Pay;
 
                 trigger OnAction()
@@ -123,12 +133,17 @@ page 50107 "Chiizu Finalize Payment"
                 Image = Calendar;
                 Promoted = true;
                 PromotedCategory = Process;
+                PromotedOnly = true;
+                ToolTip = 'Confirm and schedule the payment for the selected invoices on the specified date.';
                 Visible = FinalizeMode = FinalizeMode::Schedule;
 
                 trigger OnAction()
                 var
                     PaymentService: Codeunit "Chiizu Payment Service";
                 begin
+                    // Sync the list variable with the current subpage view
+                    CurrPage.Invoices.Page.GetRemainingInvoiceNos(InvoiceNos);
+
                     if BankAccountNo = '' then
                         Error('Please select a bank account.');
 
@@ -156,15 +171,15 @@ page 50107 "Chiizu Finalize Payment"
         ScheduledDate: Date;
         FinalizeMode: Enum "Chiizu Finalize Mode";
 
-    procedure SetContext(Invoices: List of [Code[20]]; Mode: Enum "Chiizu Finalize Mode")
+    procedure SetContext(SourceInvoices: List of [Code[20]]; Mode: Enum "Chiizu Finalize Mode")
     begin
-        InvoiceNos := Invoices;
+        InvoiceNos := SourceInvoices;
         FinalizeMode := Mode;
 
         if FinalizeMode = FinalizeMode::Schedule then
             ScheduledDate := Today;
 
-        CalculateTotal();
+        this.CalculateTotal();
     end;
 
     local procedure CalculateTotal()
@@ -190,11 +205,11 @@ page 50107 "Chiizu Finalize Payment"
         CurrPage.Invoices.Page.SetInvoices(InvoiceNos);
     end;
 
-    // Update this trigger in the parent page (50107)
+    // Update this trigger in the parent page (1000007)
     trigger OnAfterGetCurrRecord()
     begin
         // IMPORTANT: Pull the current list FROM the subpage buffer
         CurrPage.Invoices.Page.GetRemainingInvoiceNos(InvoiceNos);
-        CalculateTotal();
+        this.CalculateTotal();
     end;
 }

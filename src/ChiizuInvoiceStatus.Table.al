@@ -1,4 +1,6 @@
-table 50110 "Chiizu Invoice Status"
+namespace Chiizu;
+
+table 1000010 "Chiizu Invoice Status"
 {
     DataClassification = CustomerContent;
 
@@ -36,7 +38,7 @@ table 50110 "Chiizu Invoice Status"
         }
 
         // Webhook matching
-        field(7; "Batch Id"; Code[20])
+        field(7; "Batch Id"; Code[50])
         {
             DataClassification = SystemMetadata;
         }

@@ -1,4 +1,8 @@
-table 50103 "Chiizu Setup"
+namespace Chiizu;
+
+using Microsoft.Bank.BankAccount;
+
+table 1000003 "Chiizu Setup"
 {
     DataClassification = CustomerContent;
 

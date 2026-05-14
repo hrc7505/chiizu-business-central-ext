@@ -1,4 +1,6 @@
-codeunit 50139 "Chiizu Url Helper"
+namespace Chiizu;
+
+codeunit 1000039 "Chiizu Url Helper"
 {
     procedure GetPaymentWebhookUrl(): Text
     begin

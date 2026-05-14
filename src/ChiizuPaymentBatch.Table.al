@@ -1,4 +1,8 @@
-table 50130 "Chiizu Payment Batch"
+namespace Chiizu;
+
+using Microsoft.Purchases.Vendor;
+
+table 1000030 "Chiizu Payment Batch"
 {
     DataClassification = SystemMetadata;
     Caption = 'Chiizu Payment Batch';
@@ -40,11 +44,11 @@ table 50130 "Chiizu Payment Batch"
         {
             Caption = 'Posted At';
         }
+
         field(20; "Invoice No."; Code[20])
         {
             DataClassification = CustomerContent;
         }
-
     }
 
     keys

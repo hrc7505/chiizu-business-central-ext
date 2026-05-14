@@ -1,8 +1,14 @@
-page 50101 "Chiizu Assisted Setup"
+namespace Chiizu.Installation;
+
+using Chiizu;
+using Chiizu.BankAccounts;
+
+page 1000001 "Chiizu Assisted Setup"
 {
     PageType = Card;
     SourceTable = "Chiizu Setup";
     ApplicationArea = All;
+    UsageCategory = Administration;
     Caption = 'Chiizu';
 
     layout
@@ -16,17 +22,20 @@ page 50101 "Chiizu Assisted Setup"
                 field("API Base URL"; Rec."API Base URL")
                 {
                     ApplicationArea = All;
+                    ToolTip = 'Specifies the base URL for the Chiizu API.';
                 }
 
                 field("API Key"; Rec."API Key")
                 {
                     ApplicationArea = All;
+                    ToolTip = 'Specifies the API key for authentication.';
                 }
 
                 field("Last Verified At"; Rec."Last Verified At")
                 {
                     Caption = 'Last Connected At';
                     ApplicationArea = All;
+                    ToolTip = 'Specifies the date and time the connection was last verified.';
                     Editable = false;
                 }
             }
@@ -46,15 +55,18 @@ page 50101 "Chiizu Assisted Setup"
                 field("Auto-Sync Enabled"; Rec."Auto-Sync Enabled")
                 {
                     ApplicationArea = All;
+                    ToolTip = 'Specifies whether automatic synchronization is enabled.';
                 }
                 field("Last Sync Time"; Rec."Last Sync Time")
                 {
                     ApplicationArea = All;
+                    ToolTip = 'Specifies the time of the most recent sync operation.';
                 }
                 field("Last Sync Status"; Rec."Last Sync Status")
                 {
                     ApplicationArea = All;
                     StyleExpr = StatusStyle;
+                    ToolTip = 'Specifies the status of the most recent sync operation.';
                 }
             }
         }
@@ -71,11 +83,12 @@ page 50101 "Chiizu Assisted Setup"
                 Promoted = true;
                 PromotedCategory = Process;
                 PromotedIsBig = true;
+                PromotedOnly = true;
                 Visible = Rec."Remote Tenant Id" = '';
+                ToolTip = 'Connect your Chiizu account to Business Central.';
 
                 trigger OnAction()
                 var
-                    TenantId: Text;
                     ConnectionService: Codeunit "Chiizu Connection Service";
                 begin
                     if Rec."API Base URL" = '' then
@@ -100,11 +113,12 @@ page 50101 "Chiizu Assisted Setup"
                 Promoted = true;
                 PromotedCategory = Process;
                 PromotedIsBig = true;
+                PromotedOnly = true;
                 Visible = Rec."Remote Tenant Id" <> '';
+                ToolTip = 'Disconnect your Chiizu account from Business Central.';
 
                 trigger OnAction()
                 var
-                    TenantId: Text;
                     ConnectionService: Codeunit "Chiizu Connection Service";
                 begin
                     if ConnectionService.disconnect() then
@@ -121,13 +135,15 @@ page 50101 "Chiizu Assisted Setup"
                 ApplicationArea = All;
                 Promoted = true;
                 PromotedCategory = Process;
+                PromotedOnly = true;
                 Visible = Rec."Remote Tenant Id" <> '';
+                ToolTip = 'Select and import funding accounts from Chiizu.';
 
                 trigger OnAction()
                 var
-                    SetupMgmt: Codeunit "Chiizu Setup Management";
                     TempAllAcc: Record "Chiizu Funding Account" temporary;
                     TempSelectedAcc: Record "Chiizu Funding Account" temporary;
+                    SetupMgmt: Codeunit "Chiizu Setup Management";
                     AccPage: Page "Chiizu Funding Account List";
                 begin
                     SetupMgmt.FetchFundingAccounts(TempAllAcc);
@@ -154,18 +170,27 @@ page 50101 "Chiizu Assisted Setup"
                 ApplicationArea = All;
                 Promoted = true;
                 PromotedCategory = Process;
+                PromotedOnly = true;
                 Visible = Rec."Remote Tenant Id" <> '';
+                ToolTip = 'Trigger an immediate synchronization with Chiizu.';
+
+                trigger OnAction()
+                begin
+                    // TODO: Implement force sync
+                    Message('Force sync not implemented yet.');
+                end;
             }
 
             action(ViewLogs)
             {
+                ToolTip = 'View the detailed history of the 10-minute automated sync runs.';
                 Caption = 'View Sync History';
                 Image = Log;
                 ApplicationArea = All;
                 Promoted = true;
                 PromotedCategory = Process;
+                PromotedOnly = true;
                 RunObject = Page "Chiizu Sync Log";
-                ToolTip = 'View the detailed history of the 10-minute automated sync runs.';
             }
         }
     }
@@ -177,16 +202,17 @@ page 50101 "Chiizu Assisted Setup"
     begin
         if Rec."Last Sync Status" = 'Success' then
             StatusStyle := 'Favorable'
-        else if Rec."Last Sync Status" <> '' then
-            StatusStyle := 'Unfavorable'
         else
-            StatusStyle := 'None';
+            if Rec."Last Sync Status" <> '' then
+                StatusStyle := 'Unfavorable'
+            else
+                StatusStyle := 'None';
     end;
 
     trigger OnOpenPage()
     var
-        setupMgmt: Codeunit "Chiizu Setup Management";
         Setup: Record "Chiizu Setup";
+        setupMgmt: Codeunit "Chiizu Setup Management";
     begin
         setupMgmt.GetSetup(Setup);
     end;

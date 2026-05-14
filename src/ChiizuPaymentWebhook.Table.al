@@ -1,11 +1,13 @@
-table 50149 "Chiizu Payment Webhook"
+namespace Chiizu;
+
+table 1000049 "Chiizu Payment Webhook"
 {
     DataClassification = SystemMetadata;
 
     fields
     {
         field(1; "Entry No."; Integer) { AutoIncrement = true; }
-        field(2; "Batch Id"; Code[20]) { }
+        field(2; "Batch Id"; Code[50]) { }
         field(3; Status; Enum "Chiizu Payment Status") { }
         field(4; "Payment Reference"; Code[50]) { }
         field(5; "Received At"; DateTime) { }
@@ -19,8 +21,8 @@ table 50149 "Chiizu Payment Webhook"
 
     trigger OnInsert()
     var
-        Processor: Codeunit "Chiizu Payment Processor";
         RecCopy: Record "Chiizu Payment Webhook";
+        Processor: Codeunit "Chiizu Payment Processor";
     begin
         "Received At" := CurrentDateTime();
 

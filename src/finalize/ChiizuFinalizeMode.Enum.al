@@ -1,4 +1,6 @@
-enum 50130 "Chiizu Finalize Mode"
+namespace Chiizu.Finalize;
+
+enum 1000030 "Chiizu Finalize Mode"
 {
     Extensible = false;
 

@@ -1,4 +1,8 @@
-codeunit 50120 "Chiizu File Bypass"
+namespace Chiizu.BankAccounts;
+
+using System.IO;
+
+codeunit 1000020 "Chiizu File Bypass"
 {
     TableNo = "Data Exch."; // Must be Data Exch to prevent crashes!
 

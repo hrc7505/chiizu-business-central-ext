@@ -1,37 +1,25 @@
 {
   "id": "4acc57b8-c4ee-423b-867e-2bdbb1e0e5fc",
-  "name": "Chiizu-BC",
-  "publisher": "Default Publisher",
+  "name": "Chiizu Payments",
+  "publisher": "Chiizu Inc.",
   "version": "1.0.0.2",
-  "brief": "",
-  "description": "",
-  "privacyStatement": "",
-  "EULA": "",
-  "help": "",
-  "url": "",
-  "logo": "",
+  "brief": "Chiizu Business Central extension for payment scheduling and statement import.",
+  "description": "Provides payment scheduling and bank statement import features for Microsoft Dynamics 365 Business Central.",
+  "privacyStatement": "https://www.getchiizu.com/privacy",
+  "EULA": "https://www.getchiizu.com/terms",
+  "help": "https://www.getchiizu.com/contact",
+  "url": "https://www.getchiizu.com",
+  "logo": "./src/images/logo.png",
+  "contextSensitiveHelpUrl": "https://www.getchiizu.com/contact",
+  "applicationInsightsConnectionString": "InstrumentationKey=dec2d704-2b02-402d-b9f1-1c7a8e0c6322;IngestionEndpoint=https://westus-0.in.applicationinsights.azure.com/;LiveEndpoint=https://westus.livediagnostics.monitor.azure.com/;ApplicationId=9d64c649-5c6a-450a-86e7-fde3c8294f6d",
   "screenshots": [],
-  "platform": "27.0.0.0",
-  "application": "27.0.0.0",
-  "runtime": "16.0",
-  "dependencies": [
-    {
-      "id": "63ca2fa4-4f03-4f2b-a480-172fef340d3f",
-      "publisher": "Microsoft",
-      "name": "System Application",
-      "version": "27.0.0.0"
-    },
-    {
-      "id": "437dbf0e-84ff-417a-965d-ed2bb9650972",
-      "publisher": "Microsoft",
-      "name": "Base Application",
-      "version": "27.0.0.0"
-    }
-  ],
+  "platform": "28.0.0.0",
+  "application": "28.0.0.0",
+  "runtime": "17.0",
   "idRanges": [
     {
-      "from": 50100,
-      "to": 50149
+      "from": 1000000,
+      "to": 1000049
     }
   ],
   "resourceExposurePolicy": {
@@ -40,6 +28,7 @@
     "includeSourceInSymbolFile": true
   },
   "features": [
-    "NoImplicitWith"
+    "NoImplicitWith",
+    "TranslationFile"
   ]
 }

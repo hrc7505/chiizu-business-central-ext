@@ -1,4 +1,8 @@
-codeunit 50107 "Invoice Status Calculator"
+namespace Chiizu;
+
+using Microsoft.Purchases.Payables;
+
+codeunit 1000007 "Chiizu Invoice Status Calc"
 {
     procedure RecalculateFromVendorLedger(VLE: Record "Vendor Ledger Entry")
     var

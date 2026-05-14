@@ -1,4 +1,8 @@
-page 50108 "Chiizu Finalize Invoice List"
+namespace Chiizu.Finalize;
+
+using Microsoft.Purchases.History;
+
+page 1000008 "Chiizu Finalize Invoice List"
 {
     PageType = ListPart;
     SourceTable = "Purch. Inv. Header";
@@ -15,10 +19,30 @@ page 50108 "Chiizu Finalize Invoice List"
         {
             repeater(Lines)
             {
-                field("No."; Rec."No.") { ApplicationArea = All; Editable = false; }
-                field("Buy-from Vendor Name"; Rec."Buy-from Vendor Name") { ApplicationArea = All; Editable = false; }
-                field("Remaining Amount"; Rec."Remaining Amount") { ApplicationArea = All; Editable = false; }
-                field("Amount Including VAT"; Rec."Amount Including VAT") { ApplicationArea = All; Editable = false; }
+                field("No."; Rec."No.")
+                {
+                    ApplicationArea = All;
+                    Editable = false;
+                    Tooltip = 'Purchase invoice number.';
+                }
+                field("Buy-from Vendor Name"; Rec."Buy-from Vendor Name")
+                {
+                    ApplicationArea = All;
+                    Editable = false;
+                    Tooltip = 'Vendor name for this purchase invoice.';
+                }
+                field("Remaining Amount"; Rec."Remaining Amount")
+                {
+                    ApplicationArea = All;
+                    Editable = false;
+                    Tooltip = 'Remaining amount due on the purchase invoice.';
+                }
+                field("Amount Including VAT"; Rec."Amount Including VAT")
+                {
+                    ApplicationArea = All;
+                    Editable = false;
+                    Tooltip = 'Total amount including VAT for the purchase invoice.';
+                }
             }
         }
     }
@@ -44,14 +68,13 @@ page 50108 "Chiizu Finalize Invoice List"
         Rec.Reset();
         Rec.DeleteAll();
 
-        foreach InvNo in InvoiceNos do begin
+        foreach InvNo in InvoiceNos do
             if RealPurchInv.Get(InvNo) then begin
                 Rec.Init();
                 Rec.TransferFields(RealPurchInv);
                 // Use Insert(false) here as well just to be safe
                 Rec.Insert(false);
             end;
-        end;
 
         if Rec.FindFirst() then;
     end;

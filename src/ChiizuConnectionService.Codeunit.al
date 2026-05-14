@@ -1,6 +1,10 @@
-codeunit 50111 "Chiizu Connection Service"
+namespace Chiizu.Installation;
+
+using Chiizu.Utils;
+
+codeunit 1000011 "Chiizu Connection Service"
 {
-    procedure connect(): Code[50]
+    procedure Connect(): Code[50]
     var
         ApiClient: Codeunit "Chiizu API Client";
         Payload: JsonObject;
@@ -17,10 +21,10 @@ codeunit 50111 "Chiizu Connection Service"
 
         TenantIdTxt := TenantToken.AsValue().AsText();
 
-        exit(TenantIdTxt);
+        exit(CopyStr(TenantIdTxt, 1, 50));
     end;
 
-    procedure disconnect(): Boolean
+    procedure Disconnect(): Boolean
     var
         ApiClient: Codeunit "Chiizu API Client";
         Payload: JsonObject;

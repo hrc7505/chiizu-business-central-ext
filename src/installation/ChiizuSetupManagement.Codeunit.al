@@ -1,4 +1,13 @@
-codeunit 50108 "Chiizu Setup Management"
+namespace Chiizu.Installation;
+
+using Chiizu;
+using Chiizu.BankAccounts;
+using Chiizu.Utils;
+using Microsoft.Bank.BankAccount;
+using Microsoft.Bank.Setup;
+using System.IO;
+
+codeunit 1000008 "Chiizu Setup Management"
 {
     // --- SETUP & CONNECTION ---
     procedure GetSetup(var Setup: Record "Chiizu Setup")
@@ -12,7 +21,7 @@ codeunit 50108 "Chiizu Setup Management"
         Setup: Record "Chiizu Setup";
     begin
         // Use your existing GetSetup to load the record
-        GetSetup(Setup);
+        this.GetSetup(Setup);
 
         if Setup."API Base URL" = '' then
             Error('Chiizu API Base URL is not configured.');
@@ -36,7 +45,7 @@ codeunit 50108 "Chiizu Setup Management"
         ItemObj: JsonObject;
         i: Integer;
     begin
-        EnsureConnected();
+        this.EnsureConnected();
         ResponseJson := ApiClient.GetJson('/funding-accounts');
 
         if not ResponseJson.Get('accounts', Token) then exit;
@@ -47,9 +56,9 @@ codeunit 50108 "Chiizu Setup Management"
             ItemObj := Token.AsObject();
 
             TempAcc.Init();
-            TempAcc."Account Id" := GetJsonValue(ItemObj, 'id');
-            TempAcc.Name := GetJsonValue(ItemObj, 'name');
-            TempAcc."Account Number" := GetJsonValue(ItemObj, 'accountNumber');
+            TempAcc."Account Id" := CopyStr(this.GetJsonValue(ItemObj, 'id'), 1, MaxStrLen(TempAcc."Account Id"));
+            TempAcc.Name := CopyStr(this.GetJsonValue(ItemObj, 'name'), 1, MaxStrLen(TempAcc.Name));
+            TempAcc."Account Number" := CopyStr(this.GetJsonValue(ItemObj, 'accountNumber'), 1, MaxStrLen(TempAcc."Account Number"));
             TempAcc.Insert();
         end;
     end;
@@ -72,8 +81,8 @@ codeunit 50108 "Chiizu Setup Management"
             AccountArray.Get(i, Token);
             ItemObj := Token.AsObject();
 
-            if GetJsonValue(ItemObj, 'id') = BankAcc."No." then begin
-                BankAcc."Chiizu Remote Balance" := GetJsonDecimalValue(ItemObj, 'balance');
+            if this.GetJsonValue(ItemObj, 'id') = BankAcc."No." then begin
+                BankAcc."Chiizu Remote Balance" := this.GetJsonDecimalValue(ItemObj, 'balance');
                 BankAcc.Modify();
                 exit;
             end;
@@ -97,27 +106,12 @@ codeunit 50108 "Chiizu Setup Management"
         for i := 0 to AccountArray.Count() - 1 do begin
             AccountArray.Get(i, Token);
             ItemObj := Token.AsObject();
-            if GetJsonValue(ItemObj, 'id') = AccountId then
-                exit(GetJsonDecimalValue(ItemObj, 'balance'));
+            if this.GetJsonValue(ItemObj, 'id') = AccountId then
+                exit(this.GetJsonDecimalValue(ItemObj, 'balance'));
         end;
     end;
 
     // --- JSON HELPERS ---
-    local procedure GetJsonDateValue(Obj: JsonObject; KeyName: Text): Date
-    var
-        Token: JsonToken;
-        DateVar: Date;
-        DateText: Text;
-    begin
-        if Obj.Get(KeyName, Token) then begin
-            DateText := CopyStr(Token.AsValue().AsText(), 1, 10);
-            // 🔹 ADD ', 9' to the Evaluate function to strictly parse YYYY-MM-DD format
-            if Evaluate(DateVar, DateText, 9) then
-                exit(DateVar);
-        end;
-        exit(0D);
-    end;
-
     local procedure GetJsonValue(Obj: JsonObject; KeyName: Text): Text
     var
         Token: JsonToken;
@@ -153,12 +147,12 @@ codeunit 50108 "Chiizu Setup Management"
             DataExchDef.Type := DataExchDef.Type::"Bank Statement Import";
 
             // 🔹 THE FIX: Put the REAL API here! It runs first, fetches the data, and writes the lines.
-            DataExchDef."Ext. Data Handling Codeunit" := Codeunit::"Chiizu Statement Import"; // 50119
+            DataExchDef."Ext. Data Handling Codeunit" := Codeunit::"Chiizu Statement Import"; // 1000019
 
             DataExchDef.Insert(true);
         end else begin
             // Self-healing to fix your current database
-            DataExchDef."Ext. Data Handling Codeunit" := Codeunit::"Chiizu Statement Import"; // 50119
+            DataExchDef."Ext. Data Handling Codeunit" := Codeunit::"Chiizu Statement Import"; // 1000019
             DataExchDef.Modify(true);
         end;
 
@@ -170,20 +164,20 @@ codeunit 50108 "Chiizu Setup Management"
             BankExImpSetup.Direction := BankExImpSetup.Direction::Import;
 
             // 🔹 THE FIX: Put the EMPTY DUMMY here! It runs second and safely stops BC from crashing.
-            BankExImpSetup."Processing Codeunit ID" := Codeunit::"Chiizu File Bypass"; // 50120
+            BankExImpSetup."Processing Codeunit ID" := Codeunit::"Chiizu File Bypass"; // 1000020
 
             BankExImpSetup."Data Exch. Def. Code" := 'CHIIZU';
             BankExImpSetup.Insert(true);
         end else begin
             // Self-healing to fix your current database
-            BankExImpSetup."Processing Codeunit ID" := Codeunit::"Chiizu File Bypass"; // 50120
+            BankExImpSetup."Processing Codeunit ID" := Codeunit::"Chiizu File Bypass"; // 1000020
             BankExImpSetup."Data Exch. Def. Code" := 'CHIIZU';
             BankExImpSetup.Modify(true);
         end;
 
         // 3. CREATE BANK ACCOUNT
         BankAcc.Init();
-        BankAcc."No." := ChiizuAcc."Account Id";
+        BankAcc."No." := CopyStr(ChiizuAcc."Account Id", 1, MaxStrLen(BankAcc."No."));
         BankAcc.Name := CopyStr(ChiizuAcc.Name, 1, MaxStrLen(BankAcc.Name));
         BankAcc."Bank Account No." := ChiizuAcc."Account Number";
         BankAcc."Currency Code" := ChiizuAcc."Currency Code";

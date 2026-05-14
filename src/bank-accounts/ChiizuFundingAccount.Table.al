@@ -1,4 +1,6 @@
-table 50105 "Chiizu Funding Account"
+namespace Chiizu.BankAccounts;
+
+table 1000005 "Chiizu Funding Account"
 {
     DataClassification = CustomerContent;
     Caption = 'Chiizu Funding Account';

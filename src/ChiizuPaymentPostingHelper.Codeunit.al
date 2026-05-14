@@ -1,17 +1,23 @@
-codeunit 50143 "Chiizu Payment Posting Helper"
+namespace Chiizu;
+
+using Microsoft.Finance.GeneralLedger.Journal;
+using Microsoft.Finance.GeneralLedger.Posting;
+using Microsoft.Purchases.Payables;
+
+codeunit 1000043 "Chiizu Payment Posting Helper"
 {
     procedure PostBatch(var Batch: Record "Chiizu Payment Batch"; BankAccountNo: Code[20])
     var
         GenJnlLine: Record "Gen. Journal Line";
-        GenJnlPost: Codeunit "Gen. Jnl.-Post";
         InvoiceStatus: Record "Chiizu Invoice Status";
         VLE: Record "Vendor Ledger Entry";
+        GenJnlPost: Codeunit "Gen. Jnl.-Post";
         AmountToPay: Decimal;
     begin
         if BankAccountNo = '' then
             Error('Bank Account No. cannot be empty for a paid batch.');
 
-        EnsureJournalExists();
+        this.EnsureJournalExists();
 
         InvoiceStatus.SetRange("Batch Id", Batch."Batch Id");
         if not InvoiceStatus.FindSet() then
@@ -38,7 +44,7 @@ codeunit 50143 "Chiizu Payment Posting Helper"
             GenJnlLine.Init();
             GenJnlLine.Validate("Journal Template Name", 'GENERAL');
             GenJnlLine.Validate("Journal Batch Name", 'DEFAULT');
-            GenJnlLine."Line No." := GetNextLineNo();
+            GenJnlLine."Line No." := this.GetNextLineNo();
 
             GenJnlLine.Validate("Document No.", Batch."Batch Id");
             GenJnlLine.Validate("Document Type", GenJnlLine."Document Type"::Payment);
@@ -59,12 +65,19 @@ codeunit 50143 "Chiizu Payment Posting Helper"
             GenJnlLine."Applies-to Doc. Type" := GenJnlLine."Applies-to Doc. Type"::Invoice;
             GenJnlLine."Applies-to Doc. No." := InvoiceStatus."Invoice No.";
 
-            GenJnlLine."External Document No." := Batch."Payment Reference";
+            GenJnlLine."External Document No." := CopyStr(Batch."Payment Reference", 1, MaxStrLen(GenJnlLine."External Document No."));
 
             GenJnlLine.Insert(true);
-            GenJnlPost.Run(GenJnlLine);
 
         until InvoiceStatus.Next() = 0;
+
+        // ✅ Post all lines at once
+        GenJnlLine.Reset();
+        GenJnlLine.SetRange("Journal Template Name", 'GENERAL');
+        GenJnlLine.SetRange("Journal Batch Name", 'DEFAULT');
+        GenJnlLine.SetRange("Document No.", Batch."Batch Id");
+        if GenJnlLine.FindFirst() then
+            GenJnlPost.Run(GenJnlLine);
     end;
 
     local procedure GetNextLineNo(): Integer
@@ -80,15 +93,15 @@ codeunit 50143 "Chiizu Payment Posting Helper"
 
     local procedure EnsureJournalExists()
     var
-        Template: Record "Gen. Journal Template";
+        GenJnlTemplate: Record "Gen. Journal Template";
         Batch: Record "Gen. Journal Batch";
     begin
-        if not Template.Get('GENERAL') then
+        if not GenJnlTemplate.Get('GENERAL') then
             Error('General Journal Template GENERAL is missing.');
 
         Batch.SetRange("Journal Template Name", 'GENERAL');
         Batch.SetRange(Name, 'DEFAULT');
-        if not Batch.FindFirst() then
+        if Batch.IsEmpty() then
             Error('General Journal Batch DEFAULT is missing.');
     end;
 

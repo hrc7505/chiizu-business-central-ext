@@ -1,9 +1,11 @@
-codeunit 50141 "Chiizu Payment Processor"
+namespace Chiizu;
+
+codeunit 1000041 "Chiizu Payment Processor"
 {
     // 🔑 PUBLIC ENTRY POINT (called from table trigger or webhook handler)
     procedure Run(var WebhookRec: Record "Chiizu Payment Webhook")
     begin
-        ProcessWebhook(
+        this.ProcessWebhook(
             WebhookRec."Batch Id",
             WebhookRec.Status,
             WebhookRec."Payment Reference",

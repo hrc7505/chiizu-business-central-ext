@@ -1,4 +1,10 @@
-codeunit 50105 "Chiizu Setup Init"
+namespace Chiizu.Installation;
+
+using Chiizu;
+using System.Environment.Configuration;
+using System.Media;
+
+codeunit 1000005 "Chiizu Setup Init"
 {
     Subtype = Install;
 

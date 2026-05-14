@@ -1,4 +1,9 @@
-pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoices"
+namespace Chiizu;
+
+using Chiizu.Finalize;
+using Microsoft.Purchases.History;
+
+pageextension 1000001 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoices"
 {
     Caption = 'Chiizu | Posted Purchase Invoices';
 
@@ -37,13 +42,15 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                 Promoted = true;
                 PromotedCategory = Process;
                 PromotedIsBig = true;
+                PromotedOnly = true;
+                ToolTip = 'Initiate immediate payment for the selected invoices via Chiizu.';
 
                 trigger OnAction()
                 var
-                    PaymentService: Codeunit "Chiizu Payment Service";
                     PurchHeader: Record "Purch. Inv. Header";
-                    SelectedInvoiceNos: List of [Code[20]];
+                    PaymentService: Codeunit "Chiizu Payment Service";
                     FinalizePage: Page "Chiizu Finalize Payment";
+                    SelectedInvoiceNos: List of [Code[20]];
                 begin
                     CurrPage.SetSelectionFilter(PurchHeader);
 
@@ -59,7 +66,7 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                     PaymentService.ValidateInvoicesForPayment(SelectedInvoiceNos);
 
                     // 2️⃣ Final review
-                    FinalizePage.SetContext(SelectedInvoiceNos, "Chiizu Finalize Mode"::Pay);
+                    FinalizePage.SetContext(SelectedInvoiceNos, Enum::"Chiizu Finalize Mode"::Pay);
                     FinalizePage.RunModal();
                 end;
             }
@@ -67,23 +74,24 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
             // --------------------------
             // Schedule Payment (Bulk)
             // --------------------------
-            action(ScheduleChiizuPayment)
+            action(ChiizuScheduleChiizuPayment)
             {
                 Caption = 'Schedule Payment';
                 Image = Calendar;
                 ApplicationArea = All;
                 Promoted = true;
                 PromotedCategory = Process;
+                PromotedOnly = true;
                 ToolTip = 'Schedule payment for the selected posted purchase invoices via Chiizu.';
 
                 trigger OnAction()
                 var
                     PurchHeader: Record "Purch. Inv. Header";
-                    SelectedInvoiceNos: List of [Code[20]];
                     InvoiceStatus: Record "Chiizu Invoice Status";
-                    Status: Enum "Chiizu Payment Status";
-                    FinalizePage: Page "Chiizu Finalize Payment";
                     PaymentService: Codeunit "Chiizu Payment Service";
+                    FinalizePage: Page "Chiizu Finalize Payment";
+                    Status: Enum "Chiizu Payment Status";
+                    SelectedInvoiceNos: List of [Code[20]];
                 begin
                     CurrPage.SetSelectionFilter(PurchHeader);
 
@@ -113,7 +121,7 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
                     // ✅ EARLY VALIDATION
                     PaymentService.ValidateInvoicesForPayment(SelectedInvoiceNos);
 
-                    FinalizePage.SetContext(SelectedInvoiceNos, "Chiizu Finalize Mode"::Schedule);
+                    FinalizePage.SetContext(SelectedInvoiceNos, Enum::"Chiizu Finalize Mode"::Schedule);
                     FinalizePage.RunModal();
                 end;
             }
@@ -122,14 +130,16 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
             // --------------------------
             // CANCEL SCHEDULED PAYMENT (BULK SAFE)
             // --------------------------
-            action(CancelChiizuSchedule)
+            action(ChiizuCancelSchedule)
             {
                 Caption = 'Cancel Scheduled Payment';
                 Image = Cancel;
                 ApplicationArea = All;
                 Promoted = true;
                 PromotedCategory = Process;
+                PromotedOnly = true;
                 Enabled = IsSingleScheduledSelected;
+                ToolTip = 'Cancel the scheduled payment for the selected invoice.';
 
                 trigger OnAction()
                 var
@@ -198,23 +208,10 @@ pageextension 50101 "Chiizu Posted Purch Inv Ext" extends "Posted Purchase Invoi
         CurrPage.SetSelectionFilter(SelInv);
 
         // Magic: Check if exactly 1 record is in the selection
-        if SelInv.Count() = 1 then begin
-            if SelInv.FindFirst() then begin
+        if SelInv.Count() = 1 then
+            if SelInv.FindFirst() then
                 // Check if that specific record is 'Scheduled'
                 if Stat.Get(SelInv."No.") then
                     IsSingleScheduledSelected := (Stat.Status = Stat.Status::Scheduled);
-            end;
-        end;
-    end;
-
-    local procedure FormatInvoiceList(InvoiceNos: List of [Code[20]]): Text
-    var
-        i: Integer;
-        Txt: Text;
-    begin
-        for i := 1 to InvoiceNos.Count() do
-            Txt += '• ' + InvoiceNos.Get(i) + '\';
-
-        exit(Txt);
     end;
 }

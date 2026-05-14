@@ -1,8 +1,14 @@
-codeunit 50110 "Chiizu API Client"
+namespace Chiizu.Utils;
+
+using Chiizu;
+using Chiizu.Installation;
+
+codeunit 1000010 "Chiizu API Client"
 {
     procedure PostJson(Endpoint: Text; Payload: JsonObject): JsonObject
     var
         Setup: Record "Chiizu Setup";
+        SetupMgmt: Codeunit "Chiizu Setup Management";
         Client: HttpClient;
         Request: HttpRequestMessage;
         Response: HttpResponseMessage;
@@ -12,7 +18,6 @@ codeunit 50110 "Chiizu API Client"
         BodyText: Text;
         ResponseText: Text;
         JsonResp: JsonObject;
-        SetupMgmt: Codeunit "Chiizu Setup Management";
     begin
         // -----------------------------
         // Load setup (REQUIRED)
@@ -65,13 +70,13 @@ codeunit 50110 "Chiizu API Client"
     procedure GetJson(Endpoint: Text): JsonObject
     var
         Setup: Record "Chiizu Setup";
+        SetupMgmt: Codeunit "Chiizu Setup Management";
         Client: HttpClient;
         Request: HttpRequestMessage;
         Response: HttpResponseMessage;
         RequestHeaders: HttpHeaders;
         ResponseText: Text;
         JsonResp: JsonObject;
-        SetupMgmt: Codeunit "Chiizu Setup Management";
     begin
         SetupMgmt.GetSetup(Setup);
 
@@ -108,12 +113,11 @@ codeunit 50110 "Chiizu API Client"
         DateVar: Date;
         DateText: Text;
     begin
-        if Obj.Get(KeyName, Token) then begin
+        if Obj.Get(KeyName, Token) then
             if not Token.AsValue().IsNull() then begin
                 DateText := CopyStr(Token.AsValue().AsText(), 1, 10);
                 if Evaluate(DateVar, DateText, 9) then exit(DateVar);
             end;
-        end;
         exit(0D);
     end;
 

@@ -1,4 +1,8 @@
-codeunit 50106 "Payment Posting Subscriber"
+namespace Chiizu;
+
+using Microsoft.Purchases.Payables;
+
+codeunit 1000006 "Chiizu Payment Posting Subscr"
 {
     [EventSubscriber(
         ObjectType::Table,
@@ -13,7 +17,7 @@ codeunit 50106 "Payment Posting Subscriber"
         var xRec: Record "Vendor Ledger Entry"
     )
     var
-        StatusCalculator: Codeunit "Invoice Status Calculator";
+        StatusCalculator: Codeunit "Chiizu Invoice Status Calc";
     begin
         // Only invoices
         if Rec."Document Type" <> Rec."Document Type"::Invoice then

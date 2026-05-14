@@ -1,4 +1,6 @@
-table 50107 "Chiizu Sync Log"
+namespace Chiizu.BankAccounts;
+
+table 1000007 "Chiizu Sync Log"
 {
     DataClassification = CustomerContent;
     Caption = 'Chiizu Sync Log';
